@@ -1092,6 +1092,18 @@ if (strpos($host, \'platformgamers.com\') !== false) {
 <p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
   The addon\'s config resolution still applies inside each branch: config.php items win over the CP form. The 🔒 lock indicator shows you which fields are pinned <em>for the current MSM site you\'re viewing</em>. So you can pin the backend via config.php for some sites and let others use the CP form — mix and match.
 </p>
+<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
+  <strong>Alternative: per-front-controller via <code>$assign_to_config</code>.</strong> If your MSM setup uses a separate <code>index.php</code> per site (a common pattern for keeping completely independent EE installs that share infrastructure), the top-of-file <code>$assign_to_config</code> array is the cleanest place. EE merges it into the config registry on bootstrap, so the addon reads the right values automatically:
+</p>
+<pre style="background:#0f172a;color:#e2e8f0;padding:10px 14px;border-radius:6px;font-size:12px;font-family:ui-monospace,Menlo,monospace;line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-word"><span style="color:#94a3b8">// index.platformgamers.php</span>
+$assign_to_config[\'template_group\'] = \'home\';
+$assign_to_config[\'template\']       = \'index\';
+
+$assign_to_config[\'edge_cache_tags_backend\']         = \'nivoli\';
+$assign_to_config[\'edge_cache_tags_nivoli_endpoint\'] = \'https://console.nivoli.com/cache/aaaaaaaa\';</pre>
+<p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
+  Put each site\'s overrides in its own front controller. Main site\'s defaults still come from <code>config.php</code> if anything\'s set there. Same lock-icon behavior in the CP — these count as &quot;set via config&quot;.
+</p>
 <p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
   <strong>Multi-host Nivoli accounts:</strong> if you want one Nivoli endpoint serving multiple MSM hostnames (single dashboard URL covering all sites), ask Nivoli support to link your tokens — the per-site <code>site-&lt;id&gt;-</code> tag prefix routes purges to the right hostname automatically. Otherwise, each MSM site gets its own dashboard URL.
 </p>
@@ -1099,6 +1111,9 @@ if (strpos($host, \'platformgamers.com\') !== false) {
 <h4 style="margin:14px 0 4px;font-size:13.5px;font-weight:600;color:#1e293b">I curled my site and didn\'t see the headers — what gives?</h4>
 <p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
   Almost always: <strong>your edge cache is still serving the version it cached BEFORE the addon was installed</strong>. The addon only sets headers on responses EE renders fresh — pre-cached HITs carry whatever headers were there at the time of original caching. Look for <code>cf-cache-status: HIT</code> in the response — that confirms the answer didn\'t come from EE just now.
+</p>
+<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
+  <strong>Note on <code>curl -I</code>:</strong> <code>-I</code> sends a HEAD request, not GET. Both should carry the same headers (RFC 7231); the addon supports HEAD as of v2.3.5. If you\'re on an older version, switch to <code>curl -i</code> (lowercase, GET with headers shown) instead.
 </p>
 <p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">Bypass cache to see fresh-from-origin:</p>
 <pre style="background:#0f172a;color:#e2e8f0;padding:10px 14px;border-radius:6px;font-size:12px;font-family:ui-monospace,Menlo,monospace;overflow-x:auto;white-space:pre-wrap;word-break:break-word">curl -I "https://yoursite.com/some/page?nocache=$(date +%s)"</pre>

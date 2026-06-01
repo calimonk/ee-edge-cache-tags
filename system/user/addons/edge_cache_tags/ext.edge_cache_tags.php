@@ -35,7 +35,7 @@ if (!defined('BASEPATH')) { exit('No direct script access allowed'); }
 
 class Edge_cache_tags_ext {
 
-    public $version = '2.3.4';
+    public $version = '2.3.5';
 
     const MAX_KEYS    = 50;
     const MAX_KEY_LEN = 64;
@@ -136,8 +136,12 @@ class Edge_cache_tags_ext {
         if ($is_partial) {
             return $final_template;
         }
+        // GET and HEAD both get headers. RFC 7231: HEAD responses must
+        // carry the same headers as the equivalent GET. Without this,
+        // `curl -I` (which uses HEAD) skips the addon entirely, leaving
+        // admins to think their install is broken.
         $method = isset($_SERVER['REQUEST_METHOD']) ? strtoupper((string) $_SERVER['REQUEST_METHOD']) : 'GET';
-        if ($method !== 'GET') { return $final_template; }
+        if ($method !== 'GET' && $method !== 'HEAD') { return $final_template; }
         if (defined('REQ') && REQ === 'CP') { return $final_template; }
 
         $keys = $this->keys_for_request();
