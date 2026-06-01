@@ -171,22 +171,35 @@ class Index extends AbstractRoute
      * displays those fields as read-only with a "set via config" lock so
      * the admin understands their form input won't take effect.
      */
+    /**
+     * Map of CP form field name → config.php / $assign_to_config item
+     * key. Used by configOverrides() to detect locks and by the
+     * "Config resolution" probe panel to surface what EE returned.
+     */
+    private const CONFIG_KEYS = [
+        'backend'         => 'edge_cache_tags_backend',
+        'nivoli_endpoint' => 'edge_cache_tags_nivoli_endpoint',
+        'fastly_service'  => 'edge_cache_tags_fastly_service',
+        'fastly_api_key'  => 'edge_cache_tags_fastly_api_key',
+        'cf_zone_id'      => 'edge_cache_tags_cf_zone_id',
+        'cf_api_token'    => 'edge_cache_tags_cf_api_token',
+        'webhook_url'     => 'edge_cache_tags_webhook_url',
+        'webhook_secret'  => 'edge_cache_tags_webhook_secret',
+    ];
+
     private function configOverrides(): array
     {
-        $keys = [
-            'backend'         => 'edge_cache_tags_backend',
-            'nivoli_endpoint' => 'edge_cache_tags_nivoli_endpoint',
-            'fastly_service'  => 'edge_cache_tags_fastly_service',
-            'fastly_api_key'  => 'edge_cache_tags_fastly_api_key',
-            'cf_zone_id'      => 'edge_cache_tags_cf_zone_id',
-            'cf_api_token'    => 'edge_cache_tags_cf_api_token',
-            'webhook_url'     => 'edge_cache_tags_webhook_url',
-            'webhook_secret'  => 'edge_cache_tags_webhook_secret',
-        ];
         $out = [];
-        foreach ($keys as $local => $configKey) {
+        foreach (self::CONFIG_KEYS as $local => $configKey) {
             $val = ee()->config->item($configKey);
-            if ($val !== null && $val !== '') $out[$local] = (string) $val;
+            // CI's Config::item() returns null for missing keys, but in
+            // some EE versions / install setups it can return false (a
+            // sentinel from an older code path). Cast first, trim, then
+            // empty-check — this collapses null / false / "" / "   " all
+            // into "no override set" without losing literal values like
+            // "0" or "none" (which DO count as a real pin).
+            $valStr = trim((string) ($val ?? ''));
+            if ($valStr !== '') $out[$local] = $valStr;
         }
         return $out;
     }
@@ -381,6 +394,7 @@ class Index extends AbstractRoute
         $backendSelect = $this->renderBackendSelect($backendShown, isset($overrides['backend']));
         $configBlocks = $this->renderBackendConfigBlocks($r, $overrides, $effBackend);
         $diagBlock = $this->renderDiagBlock($diag);
+        $configProbeBlock = $this->renderConfigProbe();
         $activityBlock = $this->renderActivityBlock($siteId);
         $toolsBlock = $this->renderToolsBlock($diag['effective'], $action);
         $docsBlock = $this->renderDocsBlock();
@@ -509,6 +523,7 @@ class Index extends AbstractRoute
 
 <section class="ect-tab-panel" data-panel="status">
   {$diagBlock}
+  {$configProbeBlock}
   {$activityBlock}
 </section>
 
@@ -855,6 +870,58 @@ HTML;
             . '<h3 style="margin:18px 0 4px;font-size:14px">Sample tags this site would emit</h3>'
             . '<p class="sub" style="margin:0 0 6px">Keys are space-separated in the <code>Surrogate-Key</code> header and comma-separated in <code>Cache-Tag</code>.</p>'
             . '<div class="ect-sample">' . $sampleRows . '</div>'
+            . '</div>';
+    }
+
+    /**
+     * "Config resolution" probe — what `ee()->config->item()` actually
+     * returns for each of the addon's 8 config keys, with the raw value
+     * type. Lets an operator see exactly where a CP form lock is coming
+     * from when grep across the obvious files comes back empty. Most
+     * common surprise sources (in our experience):
+     *
+     *   - system/user/config/config.<env>.php (env-specific override)
+     *   - A custom config-bootstrap file included from config.php
+     *   - exp_config rows written by another addon or by EE core
+     *   - $assign_to_config in admin.php (not just index.php)
+     *
+     * Each row links to the corresponding form field so an operator can
+     * scroll back to the lock detail box for the exact field.
+     */
+    private function renderConfigProbe(): string
+    {
+        $h = fn($v) => htmlspecialchars((string) $v);
+        $rows = '';
+        $anySet = false;
+        foreach (self::CONFIG_KEYS as $local => $configKey) {
+            $raw = ee()->config->item($configKey);
+            $type = gettype($raw);
+            $isSet = $raw !== null && $raw !== false && trim((string) $raw) !== '';
+            if ($isSet) $anySet = true;
+            $valueCell = $isSet
+                ? '<code style="background:#fef3c7;color:#78350f;padding:2px 6px;border-radius:3px">' . $h(var_export($raw, true)) . '</code>'
+                : '<span style="color:#94a3b8">(not set)</span>';
+            $typeCell = '<code style="background:#f1f5f9;color:#475569;padding:2px 6px;border-radius:3px;font-size:11.5px">' . $h($type) . '</code>';
+            $rows .= '<tr style="border-top:1px solid #f1f5f9">'
+                . '<td style="padding:8px 12px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:' . ($isSet ? '#78350f' : '#1e293b') . '">' . $h($configKey) . '</td>'
+                . '<td style="padding:8px 12px">' . $valueCell . '</td>'
+                . '<td style="padding:8px 12px">' . $typeCell . '</td>'
+                . '</tr>';
+        }
+        $banner = $anySet
+            ? '<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:10px 14px;margin:0 0 12px;font-size:13px;color:#78350f"><strong>One or more keys are pinned via EE\'s config registry.</strong> If grep on <code>config.php</code> / <code>index.php</code> / <code>admin.php</code> comes back empty, check: <code>system/user/config/config.&lt;env&gt;.php</code>, any custom config-loader included from <code>config.php</code>, and the <code>exp_config</code> DB table (<code>SELECT site_id, key, value FROM exp_config WHERE key LIKE \'edge_cache_tags_%\'</code>).</div>'
+            : '<div style="background:#d1fae5;border:1px solid #a7f3d0;border-radius:6px;padding:10px 14px;margin:0 0 12px;font-size:13px;color:#065f46"><strong>No config-level pins detected.</strong> Form fields are fully editable; values come from the database row for this MSM site.</div>';
+
+        return '<div class="ect-card">'
+            . '<h2>Config resolution</h2>'
+            . '<p class="sub">Exact values <code>ee()->config->item()</code> returns for the addon\'s 8 config keys, as seen by this CP request. If a row shows a value, the corresponding form field on the Setup tab will be locked.</p>'
+            . $banner
+            . '<table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden">'
+            . '<thead><tr style="background:#f8fafc;text-align:left;color:#1e293b;font-weight:600"><th style="padding:9px 12px;font-size:12px;letter-spacing:0.03em;text-transform:uppercase">Config key</th><th style="padding:9px 12px;font-size:12px;letter-spacing:0.03em;text-transform:uppercase">Value returned</th><th style="padding:9px 12px;font-size:12px;letter-spacing:0.03em;text-transform:uppercase">Type</th></tr></thead>'
+            . '<tbody>' . $rows . '</tbody>'
+            . '</table>'
+            . '<p class="sub" style="margin-top:10px;font-size:12px">SQL probe (run in the EE DB) — surfaces hidden pins from <code>exp_config</code> if grep is empty:</p>'
+            . '<pre style="background:#0f172a;color:#e2e8f0;padding:10px 14px;border-radius:6px;font-size:12px;font-family:ui-monospace,Menlo,monospace;line-height:1.6;overflow-x:auto;white-space:pre-wrap">SELECT site_id, `key`, value FROM exp_config WHERE `key` LIKE \'edge_cache_tags_%\';</pre>'
             . '</div>';
     }
 
