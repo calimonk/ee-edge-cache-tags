@@ -333,31 +333,52 @@ class Index extends AbstractRoute
         $toolsBlock = $this->renderToolsBlock($diag['effective'], $action);
         $docsBlock = $this->renderDocsBlock();
 
+        // Tab badges. Status tab shows a green tick if all diag checks
+        // pass, a red dot if any fail — saves the operator one click to
+        // know whether anything's broken.
+        $diagOk = true;
+        foreach (($diag['checks'] ?? []) as $check) {
+            if (empty($check['ok'])) { $diagOk = false; break; }
+        }
+        $diagBadge = $diagOk
+            ? '<span class="ect-tab-badge" style="background:#d1fae5;color:#065f46">OK</span>'
+            : '<span class="ect-tab-badge" style="background:#fee2e2;color:#991b1b">!</span>';
+
         return <<<HTML
 <style>
-.ect { font-size:14px; line-height:1.55; color:#0f172a; }
-.ect h2 { margin:0 0 4px; font-size:16px; font-weight:600; color:#0f172a; }
-.ect .sub { color:#64748b; font-size:13px; margin:0 0 14px; }
-.ect-alert { background:#d1fae5; color:#065f46; padding:9px 12px; border-radius:6px; margin-bottom:14px; font-weight:500; }
-.ect-card { background:white; border:1px solid #e2e8f0; border-radius:8px; padding:18px 22px 22px; margin-bottom:14px; }
+/* Width cap so paragraphs don't stretch to wide-monitor unreadability.
+   Cards stay full-width visually but their text wraps at a sensible
+   line length. */
+.ect { font-size:14px; line-height:1.65; color:#0f172a; max-width:980px; }
+.ect h2 { margin:0 0 6px; font-size:17px; font-weight:600; color:#0f172a; line-height:1.3; }
+.ect .sub { color:#64748b; font-size:13.5px; margin:0 0 16px; line-height:1.6; }
+.ect-alert { background:#d1fae5; color:#065f46; padding:11px 14px; border-radius:6px; margin-bottom:14px; font-weight:500; }
+.ect-card { background:white; border:1px solid #e2e8f0; border-radius:8px; padding:22px 26px 24px; margin-bottom:16px; }
+.ect-card > p, .ect-card > ul, .ect-card > ol { max-width:760px; }
 .ect-row { display:grid; grid-template-columns:200px 1fr; gap:14px 22px; align-items:start; margin-bottom:14px; padding-bottom:14px; border-bottom:1px solid #f1f5f9; }
 .ect-row:last-of-type { margin-bottom:0; padding-bottom:0; border-bottom:0; }
 .ect-row > label.ect-lbl { font-weight:600; color:#1e293b; font-size:14px; padding-top:7px; }
 .ect-row > label.ect-lbl small { display:block; font-weight:400; color:#94a3b8; font-size:12px; margin-top:2px; }
 .ect-field input[type=text], .ect-field input[type=url], .ect-field input[type=password], .ect-field select { width:100%; padding:9px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:13.5px; box-sizing:border-box; background:white; color:#0f172a; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
 .ect-field input:focus, .ect-field select:focus { outline:2px solid #1d4ed8; outline-offset:-1px; border-color:#1d4ed8; }
-.ect-field .help { color:#64748b; font-size:12.5px; margin-top:6px; line-height:1.5; }
+.ect-field .help { color:#64748b; font-size:12.5px; margin-top:6px; line-height:1.6; }
 .ect-field .locked { background:#f1f5f9; color:#64748b; cursor:not-allowed; }
-.ect-field .lock-note { display:inline-block; margin-top:6px; padding:3px 8px; background:#fef3c7; color:#78350f; font-size:11.5px; border-radius:4px; font-weight:500; }
-.ect-btn { display:inline-block; padding:9px 18px; border-radius:6px; text-decoration:none; font-weight:600; font-size:13px; background:#1d4ed8; color:white !important; border:1px solid transparent; cursor:pointer; }
+/* Lock detail box — shown under a config-pinned field. Surfaces the
+   actual pinned value (truncated) plus instructions to unlock. */
+.ect-field .lock-detail { margin-top:8px; padding:10px 12px; background:#fef3c7; border:1px solid #fde68a; border-radius:6px; }
+.ect-field .lock-tag { display:inline-block; background:#92400e; color:#fef3c7; padding:1px 7px; border-radius:3px; font-size:10px; font-weight:700; letter-spacing:0.05em; }
+.ect-field .lock-current { color:#78350f; font-family:ui-monospace,Menlo,monospace; font-size:12.5px; font-weight:600; word-break:break-all; }
+.ect-field .lock-howto { display:block; color:#78350f; font-size:12px; line-height:1.6; margin-top:6px; }
+.ect-field .lock-howto code { background:rgba(120,53,15,0.10); color:#78350f; }
+.ect-btn { display:inline-block; padding:9px 20px; border-radius:6px; text-decoration:none; font-weight:600; font-size:13px; background:#1d4ed8; color:white !important; border:1px solid transparent; cursor:pointer; }
 .ect-btn:hover { background:#1e40af; }
-.ect-save { margin-top:18px; }
+.ect-save { margin-top:20px; }
 .ect-backend-cfg { display:none; }
 .ect-backend-cfg.active { display:block; }
 .ect-diag-summary { display:inline-block; padding:3px 10px; border-radius:4px; font-size:12px; font-weight:600; margin-left:8px; }
 .ect-diag-summary.ok { background:#d1fae5; color:#065f46; }
 .ect-diag-summary.bad { background:#fee2e2; color:#991b1b; }
-.ect-diag-row { display:grid; grid-template-columns:28px 240px 1fr; align-items:center; padding:8px 10px; border-bottom:1px solid #f1f5f9; gap:12px; font-size:13px; }
+.ect-diag-row { display:grid; grid-template-columns:28px 240px 1fr; align-items:center; padding:9px 10px; border-bottom:1px solid #f1f5f9; gap:12px; font-size:13px; }
 .ect-diag-row:last-child { border-bottom:0; }
 .ect-diag-row.bad { background:#fef2f2; }
 .ect-diag-tick { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; font-weight:700; font-size:13px; }
@@ -368,17 +389,33 @@ class Index extends AbstractRoute
 .ect-sample { background:#0f172a; color:#e2e8f0; padding:14px 16px; border-radius:6px; font-family:ui-monospace,Menlo,monospace; font-size:12px; line-height:1.7; margin-top:10px; }
 .ect-sample .label { color:#94a3b8; }
 .ect-sample .tag { color:#7dd3fc; }
-.ect code { background:#f1f5f9; padding:1px 5px; border-radius:3px; font-size:12.5px; color:#1e293b; }
-/* Inside a dark <pre> block the inline-code styling above made the text
-   invisible — same color as background. Reset to inherit so the pre's
-   light-on-dark color applies. */
+.ect code { background:#f1f5f9; padding:1px 6px; border-radius:3px; font-size:12.5px; color:#1e293b; }
 .ect pre code { background:transparent; padding:0; color:inherit; }
-.ect pre { color:#e2e8f0; }
-.ect-docs h3 { margin:16px 0 6px; font-size:14px; font-weight:600; }
-.ect-docs p { margin:6px 0; color:#475569; }
-.ect-docs ul { margin:6px 0 10px 18px; color:#475569; }
-.ect-docs li { margin:2px 0; }
+.ect pre { color:#e2e8f0; max-width:760px; }
+/* Docs typography — wider line-height, narrower text column, real
+   heading hierarchy. Was a cramped wall before. */
+.ect-docs { padding:24px 28px 28px; }
+.ect-docs > p, .ect-docs > ul, .ect-docs > ol { max-width:720px; }
+.ect-docs h3 { margin:24px 0 8px; font-size:15px; font-weight:600; color:#0f172a; line-height:1.35; }
+.ect-docs h3:first-child { margin-top:4px; }
+.ect-docs h4 { margin:18px 0 6px; font-size:13.5px; font-weight:600; color:#1e293b; line-height:1.4; }
+.ect-docs p { margin:8px 0 12px; color:#475569; line-height:1.7; }
+.ect-docs ul { margin:8px 0 14px 22px; color:#475569; line-height:1.7; }
+.ect-docs ol { margin:8px 0 14px 22px; color:#475569; line-height:1.7; }
+.ect-docs li { margin:4px 0; }
 .ect-docs a { color:#1d4ed8; }
+
+/* Tab nav — 3 pages: Setup / Status / Docs. JS-toggles which content
+   block is visible. Tab state lives on data-active so a future server-
+   rendered initial state could restore it from a query param. */
+.ect-tabs { display:flex; gap:2px; border-bottom:2px solid #e2e8f0; margin-bottom:18px; }
+.ect-tab { background:none; border:0; padding:11px 18px; font-size:13.5px; font-weight:600; color:#64748b; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; font-family:inherit; }
+.ect-tab:hover { color:#1e293b; }
+.ect-tab.active { color:#1d4ed8; border-bottom-color:#1d4ed8; }
+.ect-tab-badge { display:inline-block; margin-left:6px; padding:1px 7px; border-radius:99px; background:#e2e8f0; color:#64748b; font-size:10.5px; font-weight:700; }
+.ect-tab.active .ect-tab-badge { background:#dbeafe; color:#1d4ed8; }
+.ect-tab-panel { display:none; }
+.ect-tab-panel.active { display:block; }
 </style>
 
 <div class="ect">
@@ -392,41 +429,82 @@ class Index extends AbstractRoute
 
 {$alert}
 
-<form method="POST" action="{$action}">
-<div class="ect-card">
-  <div class="ect-row">
-    <label class="ect-lbl">Edge cache</label>
-    <div class="ect-field">
-      {$backendSelect}
-      <div class="help">Which cache should receive the purge calls when entries change. Headers emit regardless — the cache reads them either way; this just picks who gets pinged about updates.</div>
+<nav class="ect-tabs" role="tablist" aria-label="Edge Cache Tags sections">
+  <button type="button" class="ect-tab active" data-tab="setup" role="tab" aria-selected="true">Setup</button>
+  <button type="button" class="ect-tab" data-tab="status" role="tab" aria-selected="false">Status{$diagBadge}</button>
+  <button type="button" class="ect-tab" data-tab="docs" role="tab" aria-selected="false">Documentation</button>
+</nav>
+
+<section class="ect-tab-panel active" data-panel="setup">
+  <form method="POST" action="{$action}">
+  <div class="ect-card">
+    <div class="ect-row">
+      <label class="ect-lbl">Edge cache</label>
+      <div class="ect-field">
+        {$backendSelect}
+        <div class="help">Which cache should receive the purge calls when entries change. Headers emit regardless — the cache reads them either way; this just picks who gets pinged about updates.</div>
+      </div>
     </div>
+
+    {$configBlocks}
+
+    <div class="ect-save"><button type="submit" class="ect-btn">Save settings</button></div>
   </div>
+  </form>
 
-  {$configBlocks}
+  {$toolsBlock}
+</section>
 
-  <div class="ect-save"><button type="submit" class="ect-btn">Save settings</button></div>
-</div>
-</form>
+<section class="ect-tab-panel" data-panel="status">
+  {$diagBlock}
+  {$activityBlock}
+</section>
 
-{$toolsBlock}
-{$diagBlock}
-{$activityBlock}
-{$docsBlock}
+<section class="ect-tab-panel" data-panel="docs">
+  {$docsBlock}
+</section>
 
 </div>
 
 <script>
 (function () {
+  // Backend select → show only the matching credential block.
   var sel = document.getElementById('ect-backend');
-  if (!sel) return;
-  function syncCfgVisibility() {
-    var v = sel.value;
-    document.querySelectorAll('.ect-backend-cfg').forEach(function (el) {
-      el.classList.toggle('active', el.id === 'cfg-' + v);
-    });
+  if (sel) {
+    function syncCfgVisibility() {
+      var v = sel.value;
+      document.querySelectorAll('.ect-backend-cfg').forEach(function (el) {
+        el.classList.toggle('active', el.id === 'cfg-' + v);
+      });
+    }
+    sel.addEventListener('change', syncCfgVisibility);
+    syncCfgVisibility();
   }
-  sel.addEventListener('change', syncCfgVisibility);
-  syncCfgVisibility();
+
+  // Tab nav. Persist last-active tab to localStorage so a save/POST
+  // round-trip lands the operator back on the same tab they were on.
+  var tabs = document.querySelectorAll('.ect-tab');
+  var panels = document.querySelectorAll('.ect-tab-panel');
+  function activate(name) {
+    tabs.forEach(function (t) {
+      var on = t.getAttribute('data-tab') === name;
+      t.classList.toggle('active', on);
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    panels.forEach(function (p) {
+      p.classList.toggle('active', p.getAttribute('data-panel') === name);
+    });
+    try { localStorage.setItem('ect_tab', name); } catch (e) {}
+  }
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () { activate(t.getAttribute('data-tab')); });
+  });
+  try {
+    var saved = localStorage.getItem('ect_tab');
+    if (saved && document.querySelector('.ect-tab[data-tab="' + saved + '"]')) {
+      activate(saved);
+    }
+  } catch (e) {}
 })();
 </script>
 HTML;
@@ -639,12 +717,30 @@ HTML;
         $val = $locked ? $overrides[$name] : ($r[$name] ?? '');
         $cls = $locked ? 'locked' : '';
         $attr = $locked ? 'disabled' : '';
-        $input = '<input type="' . $h($type) . '" name="' . $h($name) . '" value="' . $h($val) . '" placeholder="' . $placeholder . '" class="' . $cls . '" ' . $attr . '>';
-        $lockNote = $locked ? '<span class="lock-note">🔒 set via config.php</span>' : '';
-        $helpHtml = $help ? '<div class="help">' . $help . ' ' . $lockNote . '</div>' : ($locked ? '<div class="help">' . $lockNote . '</div>' : '');
+        // Mask password-type values regardless — never echo secrets back
+        // to the page. For url/text, show the actual pinned value so the
+        // admin can confirm it's what they expect.
+        $displayVal = $val;
+        if ($type === 'password' && $locked && $val !== '') {
+            $displayVal = str_repeat('•', min(strlen($val), 24));
+        }
+        $input = '<input type="' . $h($type) . '" name="' . $h($name) . '" value="' . $h($displayVal) . '" placeholder="' . $placeholder . '" class="' . $cls . '" ' . $attr . '>';
+        $lockNote = '';
+        if ($locked) {
+            // Show the actual pinned value (truncated for long ones) so
+            // the admin can spot which MSM site / which config file the
+            // value came from. Plus a one-liner on how to override.
+            $shown = $type === 'password' ? '••••' : (strlen($val) > 60 ? substr($val, 0, 57) . '…' : $val);
+            $lockNote = '<div class="lock-detail">'
+                . '<span class="lock-tag">🔒 PINNED VIA CONFIG</span> '
+                . '<span class="lock-current">' . $h($shown) . '</span><br>'
+                . '<span class="lock-howto">Set in <code>system/user/config/config.php</code> or via <code>$assign_to_config</code> in this site\'s <code>index.php</code>. Edit / remove there to unlock this field. The CP form can\'t override config.</span>'
+                . '</div>';
+        }
+        $helpHtml = $help ? '<div class="help">' . $help . '</div>' : '';
         return '<div class="ect-row" style="border:0;padding:6px 0;margin:0">'
             . '<label class="ect-lbl">' . $h($label) . '</label>'
-            . '<div class="ect-field">' . $input . $helpHtml . '</div>'
+            . '<div class="ect-field">' . $input . $helpHtml . $lockNote . '</div>'
             . '</div>';
     }
 
@@ -948,15 +1044,19 @@ HTML;
             return '<div style="background:#0f172a;color:#e2e8f0;padding:14px 16px;border-radius:7px;font-size:12.5px;line-height:1.7;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;overflow-x:auto;white-space:pre-wrap;word-break:break-word">' . $rows . '</div>';
         };
 
+        // Examples use a generic <code>articles</code> channel so the docs read
+        // the same whether the site happens to be news, games, recipes,
+        // events, products, or anything else. Replace mentally with your
+        // own channel short_name.
         $emittedExample = $code([
-            '<span style="color:#94a3b8">Surrogate-Key:</span> <span style="color:#7dd3fc">tmpl-news-index</span> <span style="color:#7dd3fc">path-news</span> <span style="color:#fcd34d">entry-123</span> <span style="color:#fcd34d">channel-news</span> <span style="color:#fcd34d">category-9</span> <span style="color:#86efac">all</span>',
-            '<span style="color:#94a3b8">Cache-Tag:</span>     <span style="color:#7dd3fc">tmpl-news-index</span>,<span style="color:#7dd3fc">path-news</span>,<span style="color:#fcd34d">entry-123</span>,<span style="color:#fcd34d">channel-news</span>,<span style="color:#fcd34d">category-9</span>,<span style="color:#86efac">all</span>',
+            '<span style="color:#94a3b8">Surrogate-Key:</span> <span style="color:#7dd3fc">tmpl-articles-index</span> <span style="color:#7dd3fc">path-articles</span> <span style="color:#fcd34d">entry-123</span> <span style="color:#fcd34d">channel-articles</span> <span style="color:#fcd34d">category-9</span> <span style="color:#86efac">all</span>',
+            '<span style="color:#94a3b8">Cache-Tag:</span>     <span style="color:#7dd3fc">tmpl-articles-index</span>,<span style="color:#7dd3fc">path-articles</span>,<span style="color:#fcd34d">entry-123</span>,<span style="color:#fcd34d">channel-articles</span>,<span style="color:#fcd34d">category-9</span>,<span style="color:#86efac">all</span>',
         ]);
 
         $singleEntryExample = $code([
-            '<span style="color:#94a3b8">// templates/news/_view.html  — single-entry view</span>',
-            '<span style="color:#fcd34d">{exp:channel:entries channel="news" limit="1"}</span>',
-            '  <span style="color:#86efac">{exp:edge_cache_tags:key name="entry-{entry_id} channel-news"}</span>',
+            '<span style="color:#94a3b8">// templates/articles/_view.html — single-entry view</span>',
+            '<span style="color:#fcd34d">{exp:channel:entries channel="articles" limit="1"}</span>',
+            '  <span style="color:#86efac">{exp:edge_cache_tags:key name="entry-{entry_id} channel-articles"}</span>',
             '',
             '  <span style="color:#94a3b8">{!-- Optional: only if you use EE categories. Safe to omit. --}</span>',
             '  <span style="color:#fcd34d">{categories}</span><span style="color:#86efac">{exp:edge_cache_tags:key name="category-{category_id}"}</span><span style="color:#fcd34d">{/categories}</span>',
@@ -966,30 +1066,47 @@ HTML;
         ]);
 
         $listingExample = $code([
-            '<span style="color:#94a3b8">// templates/news/index.html  — listing page</span>',
-            '<span style="color:#fcd34d">{exp:channel:entries channel="news" limit="20"}</span>',
+            '<span style="color:#94a3b8">// templates/articles/index.html — listing page</span>',
+            '<span style="color:#fcd34d">{exp:channel:entries channel="articles" limit="20"}</span>',
             '  <span style="color:#86efac">{exp:edge_cache_tags:key name="entry-{entry_id}"}</span>',
-            '  <span style="color:#94a3b8">&lt;a href="{url_title_path=\\"news\\"}"&gt;{title}&lt;/a&gt;</span>',
+            '  <span style="color:#94a3b8">&lt;a href="{url_title_path=\\"articles\\"}"&gt;{title}&lt;/a&gt;</span>',
             '<span style="color:#fcd34d">{/exp:channel:entries}</span>',
-            '<span style="color:#86efac">{exp:edge_cache_tags:key name="channel-news"}</span>',
+            '<span style="color:#86efac">{exp:edge_cache_tags:key name="channel-articles"}</span>',
         ]);
 
+        // Backend-neutral config example. Each block is roughly the same
+        // shape so no one backend visually dominates. Order is alphabetical
+        // for neutrality (Cloudflare → Fastly → Nivoli → webhook).
         $configExample = $code([
+            '<span style="color:#94a3b8">// Pick ONE of the blocks below.</span>',
+            '',
+            '<span style="color:#94a3b8">// Cloudflare Enterprise (Cache-Tag purge API)</span>',
+            '<span style="color:#86efac">$config</span>[<span style="color:#fcd34d">\'edge_cache_tags_backend\'</span>]      = <span style="color:#fcd34d">\'cloudflare\'</span>;',
+            '<span style="color:#86efac">$config</span>[<span style="color:#fcd34d">\'edge_cache_tags_cf_zone_id\'</span>]   = <span style="color:#fcd34d">\'abc123...\'</span>;',
+            '<span style="color:#86efac">$config</span>[<span style="color:#fcd34d">\'edge_cache_tags_cf_api_token\'</span>] = <span style="color:#fcd34d">\'...\'</span>;',
+            '',
+            '<span style="color:#94a3b8">// Fastly (Surrogate-Key purge API)</span>',
+            '<span style="color:#86efac">$config</span>[<span style="color:#fcd34d">\'edge_cache_tags_backend\'</span>]         = <span style="color:#fcd34d">\'fastly\'</span>;',
+            '<span style="color:#86efac">$config</span>[<span style="color:#fcd34d">\'edge_cache_tags_fastly_service\'</span>]  = <span style="color:#fcd34d">\'SU1Z0...\'</span>;',
+            '<span style="color:#86efac">$config</span>[<span style="color:#fcd34d">\'edge_cache_tags_fastly_api_key\'</span>]  = <span style="color:#fcd34d">\'...\'</span>;',
+            '',
+            '<span style="color:#94a3b8">// Nivoli (managed edge with this addon pre-wired)</span>',
             '<span style="color:#86efac">$config</span>[<span style="color:#fcd34d">\'edge_cache_tags_backend\'</span>]         = <span style="color:#fcd34d">\'nivoli\'</span>;',
             '<span style="color:#86efac">$config</span>[<span style="color:#fcd34d">\'edge_cache_tags_nivoli_endpoint\'</span>] = <span style="color:#fcd34d">\'https://console.nivoli.com/cache/&lt;token&gt;\'</span>;',
             '',
-            '<span style="color:#94a3b8">// or for Fastly:</span>',
-            '<span style="color:#86efac">$config</span>[<span style="color:#fcd34d">\'edge_cache_tags_fastly_service\'</span>]  = <span style="color:#fcd34d">\'SU1Z0...\'</span>;',
-            '<span style="color:#86efac">$config</span>[<span style="color:#fcd34d">\'edge_cache_tags_fastly_api_key\'</span>]  = <span style="color:#fcd34d">\'...\'</span>;',
+            '<span style="color:#94a3b8">// Generic webhook (your own edge / Varnish / custom proxy)</span>',
+            '<span style="color:#86efac">$config</span>[<span style="color:#fcd34d">\'edge_cache_tags_backend\'</span>]        = <span style="color:#fcd34d">\'webhook\'</span>;',
+            '<span style="color:#86efac">$config</span>[<span style="color:#fcd34d">\'edge_cache_tags_webhook_url\'</span>]    = <span style="color:#fcd34d">\'https://cache.example.com/purge\'</span>;',
+            '<span style="color:#86efac">$config</span>[<span style="color:#fcd34d">\'edge_cache_tags_webhook_secret\'</span>] = <span style="color:#fcd34d">\'...\'</span>;',
         ]);
 
         return '<div class="ect-card ect-docs">
 
-<h2 style="font-size:18px;margin-bottom:6px">How tag-based cache invalidation works</h2>
-<p style="font-size:14px;color:#475569;margin:0 0 18px">If you\'ve only used URL-based purges before ("when /blog/foo updates, purge /blog/foo"), tag-based is the upgrade. The page advertises what it CONTAINS; the edge purges by content identity. Read this once and the template patterns below click immediately.</p>
+<h2>How tag-based cache invalidation works</h2>
+<p>If you\'ve only used URL-based purges before ("when /blog/foo updates, purge /blog/foo"), tag-based is the upgrade. The page advertises what it CONTAINS; the edge purges by content identity. Read this once and the template patterns below click immediately.</p>
 
 <h3>The chain in one sentence</h3>
-<p>Every page emits a list of tags describing what\'s on it (<code>entry-123</code>, <code>category-9</code>, <code>channel-news</code>, <code>home</code>). When an editor saves entry 123 in the CP, this addon POSTs a purge for the tag <code>entry-123</code>. The edge cache evicts <strong>every page</strong> that carried that tag — the single-entry view, the homepage list that featured it, the category archive that included it — all in one call. No URL enumeration. No "forgot to purge the homepage" bugs.</p>
+<p>Every page emits a list of tags describing what\'s on it (<code>entry-123</code>, <code>category-9</code>, <code>channel-articles</code>, <code>home</code>). When an editor saves entry 123 in the CP, this addon POSTs a purge for the tag <code>entry-123</code>. The edge cache evicts <strong>every page</strong> that carried that tag — the single-entry view, the homepage list that featured it, the category archive that included it — all in one call. No URL enumeration. No "forgot to purge the homepage" bugs.</p>
 
 <h3>What gets emitted on every page (automatic)</h3>
 <p>The addon already auto-tags from the URI and template context:</p>
@@ -1012,9 +1129,9 @@ HTML;
 
 <p style="margin-top:18px"><strong>Pattern 2 — listing / index page</strong> (e.g. <code>/news/</code> with 20 latest entries)</p>
 ' . $listingExample . '
-<p style="margin-top:8px;font-size:13px;color:#475569">Listing pages tag EACH entry they display, plus the channel. Saving any one of those 20 entries purges this listing. Adding a 21st entry also purges it (the <code>channel-news</code> tag fires on every save in that channel).</p>
+<p style="margin-top:8px;font-size:13px;color:#475569">Listing pages tag EACH entry they display, plus the channel. Saving any one of those 20 entries purges this listing. Adding a 21st entry also purges it (the <code>channel-articles</code> tag fires on every save in that channel).</p>
 
-<h4 style="margin:14px 0 4px;font-size:13px;font-weight:600;color:#1e293b">What about paginated pages? (<code>/games/</code>, <code>/games/P20</code>, <code>/games/P40</code> …)</h4>
+<h4 style="margin:14px 0 4px;font-size:13px;font-weight:600;color:#1e293b">What about paginated pages? (<code>/articles/</code>, <code>/articles/P20</code>, <code>/articles/P40</code> …)</h4>
 <p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
   Every paginated page runs the <strong>same template</strong>, so they all emit the same <code>channel-&lt;name&gt;</code> tag. Each page additionally tags only the 20 entries currently visible on it (page 1 → <code>entry-1</code> … <code>entry-20</code>, page 3 → <code>entry-41</code> … <code>entry-60</code>, etc).
 </p>
@@ -1022,9 +1139,9 @@ HTML;
   <strong>The result:</strong>
 </p>
 <ul style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.55">
-  <li>Edit entry-50 → fires <code>entry-50</code> + <code>channel-games</code> → page 3 (which had entry-50) evicts via entry-50, the rest of the pagination evicts via channel-games. All pagination pages refresh together.</li>
-  <li>Add a NEW entry → fires <code>channel-games</code> → all pagination pages evict (correct — a new entry shifts the order).</li>
-  <li>Delete entry-25 → same: <code>channel-games</code> fires, all pages refresh.</li>
+  <li>Edit entry-50 → fires <code>entry-50</code> + <code>channel-articles</code> → page 3 (which had entry-50) evicts via entry-50, the rest of the pagination evicts via channel-articles. All pagination pages refresh together.</li>
+  <li>Add a NEW entry → fires <code>channel-articles</code> → all pagination pages evict (correct — a new entry shifts the order).</li>
+  <li>Delete entry-25 → same: <code>channel-articles</code> fires, all pages refresh.</li>
 </ul>
 <p style="margin:0 0 0;font-size:13px;color:#475569;line-height:1.55">
   So <strong><code>channel-&lt;name&gt;</code> is the load-bearing tag for paginated listings</strong> — make sure your listing template emits it. The per-entry tags are belt-and-suspenders: they make individual edits land surgically (only the page that featured the edited entry would <em>need</em> to refresh), and they\'re useful when one template hosts a list AND another template embeds the same entries (think: a featured-3 widget on the homepage that uses <code>{exp:channel:entries limit="3"}</code>).
@@ -1051,22 +1168,22 @@ HTML;
   So template tag order doesn\'t matter — the entire body is buffered, then headers go out in front of it. You can put the plugin tag anywhere inside <code>&lt;html&gt;...&lt;/html&gt;</code>.
 </p>
 
-<h4 style="margin:14px 0 4px;font-size:13.5px;font-weight:600;color:#1e293b">Can I make up my own tags? (genre-rpg, platform-pc, year-2024)</h4>
+<h4 style="margin:14px 0 4px;font-size:13.5px;font-weight:600;color:#1e293b">Can I make up my own tags?</h4>
 <p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
-  <strong>Yes — tags are arbitrary strings.</strong> The <code>channel-&lt;name&gt;</code> / <code>category-&lt;id&gt;</code> convention exists because EE hands the addon channel and category data through its save hooks, so those are auto-purged. Outside that, there\'s no preset list — invent any taxonomy that makes sense.
+  <strong>Yes — tags are arbitrary strings.</strong> The <code>channel-&lt;name&gt;</code> / <code>category-&lt;id&gt;</code> convention exists because EE hands the addon channel and category data through its save hooks, so those are auto-purged. Outside that, there\'s no preset list — invent any taxonomy that makes sense for your content (tags like <code>author-jane</code>, <code>topic-pricing</code>, <code>region-eu</code>, <code>year-2026</code>, <code>featured</code>, anything you can spell).
 </p>
-<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">Example — a games site with custom genre fields:</p>
-<pre style="background:#0f172a;color:#e2e8f0;padding:10px 14px;border-radius:6px;font-size:12px;font-family:ui-monospace,Menlo,monospace;line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-word">{exp:channel:entries channel="games" limit="1"}
-  {exp:edge_cache_tags:key name="entry-{entry_id} channel-games"}
-  <span style="color:#94a3b8">{!-- Custom: tag with this game\'s genres and platforms --}</span>
-  {custom_field_genres}{exp:edge_cache_tags:key name="genre-{genre_slug}"}{/custom_field_genres}
-  {custom_field_platforms}{exp:edge_cache_tags:key name="platform-{platform_slug}"}{/custom_field_platforms}
+<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">Example — an entry view with two custom relationship fields, used to register one tag per related item:</p>
+<pre style="background:#0f172a;color:#e2e8f0;padding:10px 14px;border-radius:6px;font-size:12px;font-family:ui-monospace,Menlo,monospace;line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-word">{exp:channel:entries channel="articles" limit="1"}
+  {exp:edge_cache_tags:key name="entry-{entry_id} channel-articles"}
+  <span style="color:#94a3b8">{!-- Custom: tag with each related author and topic --}</span>
+  {your_authors_field}{exp:edge_cache_tags:key name="author-{author_slug}"}{/your_authors_field}
+  {your_topics_field}{exp:edge_cache_tags:key name="topic-{topic_slug}"}{/your_topics_field}
 {/exp:channel:entries}</pre>
 <p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
-  Now the page is tagged <code>entry-N channel-games genre-rpg genre-fantasy platform-pc</code>. Purging <code>genre-rpg</code> evicts every game page with that genre AND the genre listing pages that show it.
+  Now the page is tagged <code>entry-N channel-articles author-jane topic-pricing topic-eu</code>. Purging <code>author-jane</code> evicts every article page bylined to her AND any author listing that featured her — in one call.
 </p>
 <p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
-  <strong>Triggering the purge:</strong> the addon\'s built-in auto-purge only fires the standard tags on entry save (<code>entry-N</code>, <code>channel-X</code>, <code>category-Y</code>, <code>home</code>, <code>all</code>). For custom taxonomies, dispatch via the <strong>Quick actions</strong> panel above when you change them, or call <code>Edge_cache_tags_ext::manual_purge_tags([\'genre-rpg\'])</code> from a custom EE extension hooked into <code>after_channel_entry_save</code>.
+  <strong>Triggering the purge:</strong> the addon\'s built-in auto-purge only fires the standard tags on entry save (<code>entry-N</code>, <code>channel-X</code>, <code>category-Y</code>, <code>home</code>, <code>all</code>). For custom taxonomies, dispatch via the <strong>Quick actions</strong> panel on the Setup tab when you change them, or call <code>Edge_cache_tags_ext::manual_purge_tags([\'author-jane\'])</code> from a custom EE extension hooked into <code>after_channel_entry_save</code>.
 </p>
 
 <h4 style="margin:14px 0 4px;font-size:13.5px;font-weight:600;color:#1e293b">How do I configure different settings per MSM site in config.php?</h4>
@@ -1078,16 +1195,17 @@ HTML;
 </p>
 <pre style="background:#0f172a;color:#e2e8f0;padding:10px 14px;border-radius:6px;font-size:12px;font-family:ui-monospace,Menlo,monospace;line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-word">$host = isset($_SERVER[\'HTTP_HOST\']) ? strtolower($_SERVER[\'HTTP_HOST\']) : \'\';
 
-if (strpos($host, \'platformgamers.com\') !== false) {
+if (strpos($host, \'site-a.example.com\') !== false) {
+    $config[\'edge_cache_tags_backend\']      = \'cloudflare\';
+    $config[\'edge_cache_tags_cf_zone_id\']   = \'...\';
+    $config[\'edge_cache_tags_cf_api_token\'] = \'...\';
+} elseif (strpos($host, \'site-b.example.com\') !== false) {
+    $config[\'edge_cache_tags_backend\']        = \'fastly\';
+    $config[\'edge_cache_tags_fastly_service\'] = \'...\';
+    $config[\'edge_cache_tags_fastly_api_key\'] = \'...\';
+} elseif (strpos($host, \'site-c.example.com\') !== false) {
     $config[\'edge_cache_tags_backend\']         = \'nivoli\';
-    $config[\'edge_cache_tags_nivoli_endpoint\'] = \'https://console.nivoli.com/cache/aaaaaaaa\';
-} elseif (strpos($host, \'rpggamers.com\') !== false) {
-    $config[\'edge_cache_tags_backend\']         = \'nivoli\';
-    $config[\'edge_cache_tags_nivoli_endpoint\'] = \'https://console.nivoli.com/cache/bbbbbbbb\';
-} elseif (strpos($host, \'adventuregamers.com\') !== false) {
-    $config[\'edge_cache_tags_backend\']         = \'fastly\';
-    $config[\'edge_cache_tags_fastly_service\']  = \'...\';
-    $config[\'edge_cache_tags_fastly_api_key\']  = \'...\';
+    $config[\'edge_cache_tags_nivoli_endpoint\'] = \'https://console.nivoli.com/cache/&lt;token&gt;\';
 }</pre>
 <p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
   The addon\'s config resolution still applies inside each branch: config.php items win over the CP form. The 🔒 lock indicator shows you which fields are pinned <em>for the current MSM site you\'re viewing</em>. So you can pin the backend via config.php for some sites and let others use the CP form — mix and match.
@@ -1095,17 +1213,18 @@ if (strpos($host, \'platformgamers.com\') !== false) {
 <p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
   <strong>Alternative: per-front-controller via <code>$assign_to_config</code>.</strong> If your MSM setup uses a separate <code>index.php</code> per site (a common pattern for keeping completely independent EE installs that share infrastructure), the top-of-file <code>$assign_to_config</code> array is the cleanest place. EE merges it into the config registry on bootstrap, so the addon reads the right values automatically:
 </p>
-<pre style="background:#0f172a;color:#e2e8f0;padding:10px 14px;border-radius:6px;font-size:12px;font-family:ui-monospace,Menlo,monospace;line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-word"><span style="color:#94a3b8">// index.platformgamers.php</span>
+<pre style="background:#0f172a;color:#e2e8f0;padding:10px 14px;border-radius:6px;font-size:12px;font-family:ui-monospace,Menlo,monospace;line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-word"><span style="color:#94a3b8">// index.site-a.php (separate front controller per MSM site)</span>
 $assign_to_config[\'template_group\'] = \'home\';
 $assign_to_config[\'template\']       = \'index\';
 
-$assign_to_config[\'edge_cache_tags_backend\']         = \'nivoli\';
-$assign_to_config[\'edge_cache_tags_nivoli_endpoint\'] = \'https://console.nivoli.com/cache/aaaaaaaa\';</pre>
+$assign_to_config[\'edge_cache_tags_backend\']      = \'cloudflare\';
+$assign_to_config[\'edge_cache_tags_cf_zone_id\']   = \'...\';
+$assign_to_config[\'edge_cache_tags_cf_api_token\'] = \'...\';</pre>
 <p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
   Put each site\'s overrides in its own front controller. Main site\'s defaults still come from <code>config.php</code> if anything\'s set there. Same lock-icon behavior in the CP — these count as &quot;set via config&quot;.
 </p>
 <p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
-  <strong>Multi-host Nivoli accounts:</strong> if you want one Nivoli endpoint serving multiple MSM hostnames (single dashboard URL covering all sites), ask Nivoli support to link your tokens — the per-site <code>site-&lt;id&gt;-</code> tag prefix routes purges to the right hostname automatically. Otherwise, each MSM site gets its own dashboard URL.
+  <strong>Tip for Nivoli users:</strong> if you want one Nivoli endpoint serving multiple MSM hostnames (single dashboard URL covering all sites), ask Nivoli support to link your tokens — the per-site <code>site-&lt;id&gt;-</code> tag prefix routes purges to the right hostname automatically. Otherwise, each MSM site gets its own dashboard URL.
 </p>
 
 <h4 style="margin:14px 0 4px;font-size:13.5px;font-weight:600;color:#1e293b">I curled my site and didn\'t see the headers — what gives?</h4>
@@ -1140,14 +1259,23 @@ $assign_to_config[\'edge_cache_tags_nivoli_endpoint\'] = \'https://console.nivol
 <p>Multiple saves in the same CP request coalesce into <strong>one</strong> POST per backend. Fire-and-forget with a 5-second timeout — a slow edge never blocks a CP save.</p>
 
 <h3>config.php overrides (developers / config-as-code)</h3>
-<p style="margin-bottom:10px">All form settings can be pinned via <code>system/user/config/config.php</code>. Pinned values win over the CP form (the 🔒 lock indicator on the field shows you which):</p>
+<p style="margin-bottom:10px">All form settings can be pinned via <code>system/user/config/config.php</code>. Pinned values win over the CP form (the 🔒 lock indicator on the field shows you which). Pick whichever backend you\'re actually using:</p>
 ' . $configExample . '
+
+<h3>Backend cheat-sheet</h3>
+<ul>
+  <li><strong>none</strong> — emit headers, dispatch nothing. Useful while you wire templates up or run a non-purging CDN.</li>
+  <li><strong>cloudflare</strong> — POSTs to the CF zone purge API with the <code>tags</code> array. Requires the Enterprise plan (Cache-Tag purging is gated). Tokens scoped to <em>Zone.Cache Purge</em> are enough.</li>
+  <li><strong>fastly</strong> — POSTs to <code>api.fastly.com/service/&lt;id&gt;/purge/&lt;key&gt;</code> per key (Surrogate-Key API). Works on Standard plans. Token needs <em>purge</em> permission.</li>
+  <li><strong>nivoli</strong> — one POST to your dashboard URL; Nivoli reads the tag list out of the body. Managed service with this addon pre-wired.</li>
+  <li><strong>webhook</strong> — your own endpoint. Body is JSON <code>{tags, site_id, source}</code>, optional <code>X-Edge-Cache-Tags-Signature</code> HMAC if you set a secret. Great for Varnish (vcl-driven) or a custom proxy.</li>
+</ul>
 
 <h3>More</h3>
 <ul>
   <li><a href="https://github.com/calimonk/ee-edge-cache-tags" target="_blank" rel="noopener">GitHub README</a> — filter hooks, full MSM behavior, backend comparison table</li>
   <li><a href="https://github.com/calimonk/ee-edge-cache-tags/blob/main/README.md#multi-site-manager-msm" target="_blank" rel="noopener">MSM section</a> — site-prefix isolation rules</li>
-  <li><a href="https://console.nivoli.com/signup" target="_blank" rel="noopener">Sign up for Nivoli</a> — managed edge with this addon pre-wired</li>
+  <li><a href="https://github.com/calimonk/ee-edge-cache-tags/blob/main/README.md#webhook-backend" target="_blank" rel="noopener">Webhook payload spec</a> — for hand-rolled edges</li>
 </ul>
 </div>';
     }
