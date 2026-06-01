@@ -608,46 +608,109 @@ HTML;
 
     private function renderDocsBlock(): string
     {
+        // EE's CP view layer flattens whitespace inside <pre> blocks (or the
+        // HTML gets re-templated somewhere up-stack), so each code line goes
+        // in its own styled <div> instead of relying on \n inside <pre>.
+        // Defensive, but guarantees layout regardless of EE's pipeline.
+        $code = function ($lines) {
+            $rows = '';
+            foreach ((array) $lines as $ln) {
+                // Render each line as its own div with monospace + dark bg.
+                $rows .= '<div style="padding:2px 0">' . $ln . '</div>';
+            }
+            return '<div style="background:#0f172a;color:#e2e8f0;padding:14px 16px;border-radius:7px;font-size:12.5px;line-height:1.7;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;overflow-x:auto;white-space:pre-wrap;word-break:break-word">' . $rows . '</div>';
+        };
+
+        $emittedExample = $code([
+            '<span style="color:#94a3b8">Surrogate-Key:</span> <span style="color:#7dd3fc">tmpl-news-index</span> <span style="color:#7dd3fc">path-news</span> <span style="color:#fcd34d">entry-123</span> <span style="color:#fcd34d">channel-news</span> <span style="color:#fcd34d">category-9</span> <span style="color:#86efac">all</span>',
+            '<span style="color:#94a3b8">Cache-Tag:</span>     <span style="color:#7dd3fc">tmpl-news-index</span>,<span style="color:#7dd3fc">path-news</span>,<span style="color:#fcd34d">entry-123</span>,<span style="color:#fcd34d">channel-news</span>,<span style="color:#fcd34d">category-9</span>,<span style="color:#86efac">all</span>',
+        ]);
+
+        $singleEntryExample = $code([
+            '<span style="color:#94a3b8">// templates/news/_view.html  — single-entry view</span>',
+            '<span style="color:#fcd34d">{exp:channel:entries channel="news" limit="1"}</span>',
+            '  <span style="color:#86efac">{exp:edge_cache_tags:key name="entry-{entry_id} channel-news"}</span>',
+            '  <span style="color:#fcd34d">{categories}</span><span style="color:#86efac">{exp:edge_cache_tags:key name="category-{category_id}"}</span><span style="color:#fcd34d">{/categories}</span>',
+            '',
+            '  <span style="color:#94a3b8">&lt;article&gt;...&lt;/article&gt;</span>',
+            '<span style="color:#fcd34d">{/exp:channel:entries}</span>',
+        ]);
+
+        $listingExample = $code([
+            '<span style="color:#94a3b8">// templates/news/index.html  — listing page</span>',
+            '<span style="color:#fcd34d">{exp:channel:entries channel="news" limit="20"}</span>',
+            '  <span style="color:#86efac">{exp:edge_cache_tags:key name="entry-{entry_id}"}</span>',
+            '  <span style="color:#94a3b8">&lt;a href="{url_title_path=\\"news\\"}"&gt;{title}&lt;/a&gt;</span>',
+            '<span style="color:#fcd34d">{/exp:channel:entries}</span>',
+            '<span style="color:#86efac">{exp:edge_cache_tags:key name="channel-news"}</span>',
+        ]);
+
+        $configExample = $code([
+            '<span style="color:#86efac">$config</span>[<span style="color:#fcd34d">\'edge_cache_tags_backend\'</span>]         = <span style="color:#fcd34d">\'nivoli\'</span>;',
+            '<span style="color:#86efac">$config</span>[<span style="color:#fcd34d">\'edge_cache_tags_nivoli_endpoint\'</span>] = <span style="color:#fcd34d">\'https://console.nivoli.com/cache/&lt;token&gt;\'</span>;',
+            '',
+            '<span style="color:#94a3b8">// or for Fastly:</span>',
+            '<span style="color:#86efac">$config</span>[<span style="color:#fcd34d">\'edge_cache_tags_fastly_service\'</span>]  = <span style="color:#fcd34d">\'SU1Z0...\'</span>;',
+            '<span style="color:#86efac">$config</span>[<span style="color:#fcd34d">\'edge_cache_tags_fastly_api_key\'</span>]  = <span style="color:#fcd34d">\'...\'</span>;',
+        ]);
+
         return '<div class="ect-card ect-docs">
-<h2>How it works</h2>
 
-<h3>What gets emitted</h3>
-<p>Every front-end GET that isn\'t the CP gets both headers:</p>
-<pre style="background:#0f172a;color:#e2e8f0;padding:12px;border-radius:6px;font-size:12px;overflow:auto"><code>Surrogate-Key: tmpl-news-index path-news entry-123 channel-news category-9 all
-Cache-Tag:     tmpl-news-index,path-news,entry-123,channel-news,category-9,all</code></pre>
-<p>Auto-derived from the URI and template context. MSM sites > 1 get <code>site-&lt;id&gt;-</code> prefixed keys plus a network-wide <code>all</code>.</p>
+<h2 style="font-size:18px;margin-bottom:6px">How tag-based cache invalidation works</h2>
+<p style="font-size:14px;color:#475569;margin:0 0 18px">If you\'ve only used URL-based purges before ("when /blog/foo updates, purge /blog/foo"), tag-based is the upgrade. The page advertises what it CONTAINS; the edge purges by content identity. Read this once and the template patterns below click immediately.</p>
 
-<h3>Declaring entry-level keys in templates</h3>
-<p>Inside a <code>channel:entries</code> loop, use the plugin tag so the response carries <code>entry-&lt;id&gt;</code> / <code>category-&lt;id&gt;</code>:</p>
-<pre style="background:#0f172a;color:#e2e8f0;padding:12px;border-radius:6px;font-size:12px;overflow:auto"><code>{exp:channel:entries channel="news" limit="1"}
-  {exp:edge_cache_tags:key name="entry-{entry_id} channel-news"}
-  {categories}{exp:edge_cache_tags:key name="category-{category_id}"}{/categories}
-  ...
-{/exp:channel:entries}</code></pre>
+<h3>The chain in one sentence</h3>
+<p>Every page emits a list of tags describing what\'s on it (<code>entry-123</code>, <code>category-9</code>, <code>channel-news</code>, <code>home</code>). When an editor saves entry 123 in the CP, this addon POSTs a purge for the tag <code>entry-123</code>. The edge cache evicts <strong>every page</strong> that carried that tag — the single-entry view, the homepage list that featured it, the category archive that included it — all in one call. No URL enumeration. No "forgot to purge the homepage" bugs.</p>
 
-<h3>What gets purged on entry save</h3>
-<ul>
-  <li><code>home</code>, <code>all</code> (or their <code>site-&lt;id&gt;-</code> prefixed variants on MSM &gt; 1)</li>
-  <li><code>entry-&lt;id&gt;</code></li>
-  <li><code>channel-&lt;name&gt;</code>, <code>path-&lt;name&gt;</code></li>
-  <li>One <code>category-&lt;cat_id&gt;</code> per attached category</li>
+<h3>What gets emitted on every page (automatic)</h3>
+<p>The addon already auto-tags from the URI and template context:</p>
+' . $emittedExample . '
+<ul style="margin-top:12px">
+  <li><code>tmpl-&lt;group&gt;-&lt;template&gt;</code> — which template rendered (e.g. <code>tmpl-news-index</code>)</li>
+  <li><code>path-&lt;first-segment&gt;</code> — first URL segment (e.g. <code>path-news</code> for /news/anything)</li>
+  <li><code>all</code> — every page carries this; lets an admin nuke everything with one tag</li>
+  <li><code>home</code> — only on the homepage / front controller</li>
+  <li>MSM site_id &gt; 1: all keys above prefixed with <code>site-&lt;id&gt;-</code>, plus an unprefixed <code>all</code></li>
 </ul>
-<p>Multiple saves in the same request coalesce into <strong>one</strong> POST per backend. Fire-and-forget with a 5-second timeout — a slow edge never blocks an EE CP save.</p>
+<p style="margin-top:10px"><strong>What\'s missing:</strong> the addon can\'t know which <em>entries</em> are on a page from outside the template — that\'s why you add the next step.</p>
 
-<h3>config.php overrides</h3>
-<p>Settings above are stored in <code>exp_edge_cache_tags_settings</code>. If you prefer config-as-code, set any of these in <code>system/user/config/config.php</code> and they win over the form (the locked-field indicator above shows you which are pinned):</p>
-<pre style="background:#0f172a;color:#e2e8f0;padding:12px;border-radius:6px;font-size:12px;overflow:auto"><code>$config[\'edge_cache_tags_backend\']         = \'nivoli\';
-$config[\'edge_cache_tags_nivoli_endpoint\'] = \'https://console.nivoli.com/cache/&lt;token&gt;\';
-$config[\'edge_cache_tags_fastly_service\']  = \'...\';
-$config[\'edge_cache_tags_fastly_api_key\']  = \'...\';
-$config[\'edge_cache_tags_cf_zone_id\']      = \'...\';
-$config[\'edge_cache_tags_cf_api_token\']    = \'...\';
-$config[\'edge_cache_tags_webhook_url\']     = \'https://your-edge/purge\';
-$config[\'edge_cache_tags_webhook_secret\']  = \'...\';</code></pre>
+<h3>What YOU add to your templates</h3>
+<p>For each page that shows entry data, declare which entries are on it. Then editing that entry purges this page.</p>
+
+<p style="margin-top:14px"><strong>Pattern 1 — single entry view</strong> (e.g. <code>/news/some-article</code>)</p>
+' . $singleEntryExample . '
+<p style="margin-top:8px;font-size:13px;color:#475569">Now if someone edits this entry, OR changes its categories, OR deletes it — this page evicts.</p>
+
+<p style="margin-top:18px"><strong>Pattern 2 — listing / index page</strong> (e.g. <code>/news/</code> with 20 latest entries)</p>
+' . $listingExample . '
+<p style="margin-top:8px;font-size:13px;color:#475569">Listing pages tag EACH entry they display, plus the channel. Saving any one of those 20 entries purges this listing. Adding a 21st entry also purges it (the <code>channel-news</code> tag fires on every save in that channel).</p>
+
+<h3>Why <code>entry-&lt;id&gt;</code> and not <code>url_title</code> or the full URL?</h3>
+<ul>
+  <li><strong>Stability.</strong> Entry IDs never change. URL titles change when an editor edits a slug; URLs change when you reorganize taxonomies. Tags tied to IDs survive those edits.</li>
+  <li><strong>Cross-page coverage.</strong> The same entry appears on many URLs (single view, homepage, channel index, category archive, search). One <code>entry-N</code> tag intersects all of them — you don\'t maintain a separate "purge list" per page.</li>
+  <li><strong>Save-event compatibility.</strong> EE\'s <code>after_channel_entry_save</code> hook hands the addon the entry id. The addon can\'t look up "every URL this entry appears on" — but it can fire a single <code>entry-N</code> tag and trust the emit side did the binding.</li>
+</ul>
+
+<h3>What gets purged when content changes</h3>
+<p>When an editor hits <strong>Save</strong> on an entry (or deletes it), this addon dispatches purge for:</p>
+<ul>
+  <li><code>entry-&lt;id&gt;</code> — every page that featured this entry</li>
+  <li><code>channel-&lt;name&gt;</code> &amp; <code>path-&lt;name&gt;</code> — channel listing pages</li>
+  <li>One <code>category-&lt;cat_id&gt;</code> per category the entry belongs to — category archives</li>
+  <li><code>home</code> — the homepage (entries often appear there)</li>
+  <li>MSM site_id &gt; 1: all the above prefixed with <code>site-&lt;id&gt;-</code> for isolation</li>
+</ul>
+<p>Multiple saves in the same CP request coalesce into <strong>one</strong> POST per backend. Fire-and-forget with a 5-second timeout — a slow edge never blocks a CP save.</p>
+
+<h3>config.php overrides (developers / config-as-code)</h3>
+<p style="margin-bottom:10px">All form settings can be pinned via <code>system/user/config/config.php</code>. Pinned values win over the CP form (the 🔒 lock indicator on the field shows you which):</p>
+' . $configExample . '
 
 <h3>More</h3>
 <ul>
-  <li><a href="https://github.com/calimonk/ee-edge-cache-tags" target="_blank" rel="noopener">GitHub README</a> — filter hooks, MSM section, backend comparison table</li>
+  <li><a href="https://github.com/calimonk/ee-edge-cache-tags" target="_blank" rel="noopener">GitHub README</a> — filter hooks, full MSM behavior, backend comparison table</li>
+  <li><a href="https://github.com/calimonk/ee-edge-cache-tags/blob/main/README.md#multi-site-manager-msm" target="_blank" rel="noopener">MSM section</a> — site-prefix isolation rules</li>
   <li><a href="https://console.nivoli.com/signup" target="_blank" rel="noopener">Sign up for Nivoli</a> — managed edge with this addon pre-wired</li>
 </ul>
 </div>';
