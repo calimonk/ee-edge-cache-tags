@@ -1143,38 +1143,67 @@ HTML;
      * Build a small "your stats" widget from the parsed /stats payload.
      * Returns empty string if data isn't available or doesn't have the
      * keys we need.
+     *
+     * v2.4.5: remapped to the real Nivoli /stats response shape. The
+     * previous version read `savings.cache_served_bytes` which doesn't
+     * exist in the API (bytes-served is computed dashboard-side and not
+     * exposed). Now reads only fields the API actually returns:
+     *
+     *   summary.totalRequests   — int request count for the window
+     *   summary.hitRate         — float 0..1
+     *   summary.errorRate       — float 0..1
+     *   summary.bypassRate      — float 0..1
+     *   summary.avgDurationMs   — float, mean perceived response time
+     *
+     * Four tiles, all derived from `summary` so nothing renders if the
+     * API returns the shape we don't recognize. The widget grid is
+     * `auto-fit minmax(160px, 1fr)` so it relaxes to 2 / 1 columns on
+     * narrower viewports.
      */
     private function renderNivoliStatsWidget(array $stats): string
     {
         $summary = $stats['summary'] ?? [];
-        $savings = $stats['savings'] ?? [];
-        $totalReqs   = (int)   ($summary['totalRequests'] ?? 0);
-        $hitRate     = (float) ($summary['hitRate'] ?? 0);   // 0..1
-        $bytesSaved  = (int)   ($savings['cache_served_bytes'] ?? 0);
+        $totalReqs    = (int)   ($summary['totalRequests']  ?? 0);
+        $hitRate      = (float) ($summary['hitRate']        ?? 0);
+        $errorRate    = (float) ($summary['errorRate']      ?? 0);
+        $avgDurMs     = (float) ($summary['avgDurationMs']  ?? 0);
         if ($totalReqs <= 0) return '';
 
-        $fmtNum = function (int $n): string {
+        $fmtNum = function ($n): string {
+            $n = (int) $n;
             if ($n >= 1_000_000) return number_format($n / 1_000_000, 1) . 'M';
             if ($n >= 1_000)     return number_format($n / 1_000, 1) . 'k';
             return (string) $n;
         };
-        $fmtBytes = function (int $b): string {
-            if ($b >= 1_073_741_824) return number_format($b / 1_073_741_824, 1) . ' GB';
-            if ($b >= 1_048_576)     return number_format($b / 1_048_576, 1) . ' MB';
-            if ($b >= 1024)          return number_format($b / 1024, 1) . ' KB';
-            return $b . ' B';
+        $fmtDuration = function (float $ms): string {
+            if ($ms <= 0) return '—';
+            if ($ms < 1) return number_format($ms, 2) . ' ms';
+            if ($ms < 1000) return (int) round($ms) . ' ms';
+            return number_format($ms / 1000, 2) . ' s';
         };
+
         $hitPct = round($hitRate * 100);
+        $errPct = $errorRate > 0 ? number_format($errorRate * 100, 2) . '%' : '0%';
+        $errCount = (int) round($totalReqs * $errorRate);
+
+        // Cell builder so all four tiles stay visually consistent.
+        $cell = function (string $label, string $value, string $sub = '') {
+            $subHtml = $sub !== ''
+                ? '<div style="font-size:11px;opacity:0.65;margin-top:2px">' . htmlspecialchars($sub) . '</div>'
+                : '';
+            return '<div><div style="font-size:11px;opacity:0.78;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px">' . htmlspecialchars($label) . '</div>'
+                . '<div style="font-size:24px;font-weight:700;line-height:1.1">' . $value . '</div>'
+                . $subHtml
+                . '</div>';
+        };
 
         return '<div style="background:linear-gradient(135deg,#065f46 0%,#0e7490 100%);color:white;border-radius:8px;padding:16px 20px;margin-bottom:16px;box-shadow:0 3px 12px rgba(6,95,70,0.18)">'
             . '<div style="font-size:11px;font-weight:700;letter-spacing:0.10em;text-transform:uppercase;color:#6ee7b7;margin-bottom:8px">📊 Your cache performance · last 30 days</div>'
-            . '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px">'
-            . '<div><div style="font-size:11px;opacity:0.78;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px">Hit rate</div>'
-            . '<div style="font-size:24px;font-weight:700;line-height:1.1">' . $hitPct . '%</div></div>'
-            . '<div><div style="font-size:11px;opacity:0.78;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px">Requests served</div>'
-            . '<div style="font-size:24px;font-weight:700;line-height:1.1">' . $fmtNum($totalReqs) . '</div></div>'
-            . '<div><div style="font-size:11px;opacity:0.78;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px">Origin bandwidth saved</div>'
-            . '<div style="font-size:24px;font-weight:700;line-height:1.1">' . $fmtBytes($bytesSaved) . '</div></div>'
+            . '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px">'
+            . $cell('Hit rate', $hitPct . '%')
+            . $cell('Requests served', $fmtNum($totalReqs))
+            . $cell('Avg response', $fmtDuration($avgDurMs))
+            . $cell('Error rate', $errPct, $errCount > 0 ? $fmtNum($errCount) . ' errors' : '')
             . '</div></div>';
     }
 
