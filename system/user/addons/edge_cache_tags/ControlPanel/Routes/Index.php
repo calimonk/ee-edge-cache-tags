@@ -957,6 +957,8 @@ HTML;
             '<span style="color:#94a3b8">// templates/news/_view.html  — single-entry view</span>',
             '<span style="color:#fcd34d">{exp:channel:entries channel="news" limit="1"}</span>',
             '  <span style="color:#86efac">{exp:edge_cache_tags:key name="entry-{entry_id} channel-news"}</span>',
+            '',
+            '  <span style="color:#94a3b8">{!-- Optional: only if you use EE categories. Safe to omit. --}</span>',
             '  <span style="color:#fcd34d">{categories}</span><span style="color:#86efac">{exp:edge_cache_tags:key name="category-{category_id}"}</span><span style="color:#fcd34d">{/categories}</span>',
             '',
             '  <span style="color:#94a3b8">&lt;article&gt;...&lt;/article&gt;</span>',
@@ -1006,7 +1008,7 @@ HTML;
 
 <p style="margin-top:14px"><strong>Pattern 1 — single entry view</strong> (e.g. <code>/news/some-article</code>)</p>
 ' . $singleEntryExample . '
-<p style="margin-top:8px;font-size:13px;color:#475569">Now if someone edits this entry, OR changes its categories, OR deletes it — this page evicts.</p>
+<p style="margin-top:8px;font-size:13px;color:#475569">Now if someone edits this entry, OR changes its categories, OR deletes it — this page evicts. <strong>If your site doesn\'t use EE categories</strong>, just omit the <code>{categories}</code> block — everything else still works.</p>
 
 <p style="margin-top:18px"><strong>Pattern 2 — listing / index page</strong> (e.g. <code>/news/</code> with 20 latest entries)</p>
 ' . $listingExample . '
@@ -1027,6 +1029,13 @@ HTML;
 <p style="margin:0 0 0;font-size:13px;color:#475569;line-height:1.55">
   So <strong><code>channel-&lt;name&gt;</code> is the load-bearing tag for paginated listings</strong> — make sure your listing template emits it. The per-entry tags are belt-and-suspenders: they make individual edits land surgically (only the page that featured the edited entry would <em>need</em> to refresh), and they\'re useful when one template hosts a list AND another template embeds the same entries (think: a featured-3 widget on the homepage that uses <code>{exp:channel:entries limit="3"}</code>).
 </p>
+
+<h3>Verifying headers in production</h3>
+<p>A common gotcha when first installing: you curl your live URL and don\'t see the new headers. Almost always this is because <strong>your edge cache is still serving the version it cached BEFORE the addon was installed.</strong> The plugin only sets headers on responses the EE template engine renders fresh — pre-cached HITs carry whatever headers were there at the time of original caching.</p>
+<p>To check whether headers are emitting from origin <em>right now</em>, bypass cache:</p>
+<pre style="background:#0f172a;color:#e2e8f0;padding:10px 14px;border-radius:6px;font-size:12px;font-family:ui-monospace,Menlo,monospace;overflow-x:auto;white-space:pre-wrap;word-break:break-word">curl -I "https://yoursite.com/some/page?nocache=$(date +%s)"</pre>
+<p>The random query param defeats Cloudflare\'s cache key (and most reverse-proxies). Look for <code>Surrogate-Key:</code> and <code>Cache-Tag:</code> in the response. If they\'re there, you\'re good — the addon is emitting; existing CF cache will start carrying them as pages expire / get purged.</p>
+<p>If headers are STILL missing on a cache-busted request: check the <strong>Diagnostics</strong> card on this page — extension hooks should be 4 enabled rows. Save a channel entry and watch the <strong>Recent activity</strong> log for a dispatch. If nothing appears there either, the addon\'s hooks aren\'t firing — uninstall + reinstall is the cleanest recovery.</p>
 
 <h3>Why <code>entry-&lt;id&gt;</code> and not <code>url_title</code> or the full URL?</h3>
 <ul>
