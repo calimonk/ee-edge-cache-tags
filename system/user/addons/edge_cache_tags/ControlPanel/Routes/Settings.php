@@ -159,8 +159,8 @@ class Settings extends AbstractRoute
 
         // 3. Addon files on disk.
         $files = [
-            'addon.setup.php', 'ext.edge_cache_tags.php', 'mcp.edge_cache_tags.php',
-            'upd.edge_cache_tags.php', 'pi.edge_cache_tags.php',
+            'addon.setup.php', 'ext.edge_cache_tags.php', 'mod.edge_cache_tags.php',
+            'mcp.edge_cache_tags.php', 'upd.edge_cache_tags.php',
             'ControlPanel/Routes/Settings.php',
         ];
         $base = SYSPATH . 'user/addons/edge_cache_tags/';
