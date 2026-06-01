@@ -1030,12 +1030,81 @@ HTML;
   So <strong><code>channel-&lt;name&gt;</code> is the load-bearing tag for paginated listings</strong> — make sure your listing template emits it. The per-entry tags are belt-and-suspenders: they make individual edits land surgically (only the page that featured the edited entry would <em>need</em> to refresh), and they\'re useful when one template hosts a list AND another template embeds the same entries (think: a featured-3 widget on the homepage that uses <code>{exp:channel:entries limit="3"}</code>).
 </p>
 
-<h3>Verifying headers in production</h3>
-<p>A common gotcha when first installing: you curl your live URL and don\'t see the new headers. Almost always this is because <strong>your edge cache is still serving the version it cached BEFORE the addon was installed.</strong> The plugin only sets headers on responses the EE template engine renders fresh — pre-cached HITs carry whatever headers were there at the time of original caching.</p>
-<p>To check whether headers are emitting from origin <em>right now</em>, bypass cache:</p>
+<h3>Common questions</h3>
+
+<h4 style="margin:14px 0 4px;font-size:13.5px;font-weight:600;color:#1e293b">Do I need to pick a backend before headers start emitting?</h4>
+<p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
+  <strong>No.</strong> Headers emit on every front-end GET that goes through the EE template engine, regardless of which backend is selected — including <code>none</code>. The backend choice only controls where purges get dispatched on entry saves; the response headers themselves are independent. So you can install the addon, leave the backend on <code>none</code>, and start seeing <code>Surrogate-Key</code> / <code>Cache-Tag</code> in fresh responses immediately. Pick a backend later when you want auto-purges too.
+</p>
+
+<h4 style="margin:14px 0 4px;font-size:13.5px;font-weight:600;color:#1e293b">How can headers come out BEFORE the body if the template tag is inside the HTML?</h4>
+<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
+  Output buffering. The EE template engine works in stages:
+</p>
+<ol style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
+  <li>All template tags run — including <code>{exp:edge_cache_tags:key}</code>, which stashes keys in a session cache and outputs nothing</li>
+  <li>After the body is fully parsed, the <code>template_post_parse</code> hook fires</li>
+  <li>The addon reads the stashed keys + URI context + template-group context, calls <code>ee()->output->set_header(...)</code> to <strong>register</strong> the headers</li>
+  <li>EE finalizes output: HTTP headers are sent FIRST (yours included), THEN the body</li>
+</ol>
+<p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
+  So template tag order doesn\'t matter — the entire body is buffered, then headers go out in front of it. You can put the plugin tag anywhere inside <code>&lt;html&gt;...&lt;/html&gt;</code>.
+</p>
+
+<h4 style="margin:14px 0 4px;font-size:13.5px;font-weight:600;color:#1e293b">Can I make up my own tags? (genre-rpg, platform-pc, year-2024)</h4>
+<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
+  <strong>Yes — tags are arbitrary strings.</strong> The <code>channel-&lt;name&gt;</code> / <code>category-&lt;id&gt;</code> convention exists because EE hands the addon channel and category data through its save hooks, so those are auto-purged. Outside that, there\'s no preset list — invent any taxonomy that makes sense.
+</p>
+<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">Example — a games site with custom genre fields:</p>
+<pre style="background:#0f172a;color:#e2e8f0;padding:10px 14px;border-radius:6px;font-size:12px;font-family:ui-monospace,Menlo,monospace;line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-word">{exp:channel:entries channel="games" limit="1"}
+  {exp:edge_cache_tags:key name="entry-{entry_id} channel-games"}
+  <span style="color:#94a3b8">{!-- Custom: tag with this game\'s genres and platforms --}</span>
+  {custom_field_genres}{exp:edge_cache_tags:key name="genre-{genre_slug}"}{/custom_field_genres}
+  {custom_field_platforms}{exp:edge_cache_tags:key name="platform-{platform_slug}"}{/custom_field_platforms}
+{/exp:channel:entries}</pre>
+<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
+  Now the page is tagged <code>entry-N channel-games genre-rpg genre-fantasy platform-pc</code>. Purging <code>genre-rpg</code> evicts every game page with that genre AND the genre listing pages that show it.
+</p>
+<p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
+  <strong>Triggering the purge:</strong> the addon\'s built-in auto-purge only fires the standard tags on entry save (<code>entry-N</code>, <code>channel-X</code>, <code>category-Y</code>, <code>home</code>, <code>all</code>). For custom taxonomies, dispatch via the <strong>Quick actions</strong> panel above when you change them, or call <code>Edge_cache_tags_ext::manual_purge_tags([\'genre-rpg\'])</code> from a custom EE extension hooked into <code>after_channel_entry_save</code>.
+</p>
+
+<h4 style="margin:14px 0 4px;font-size:13.5px;font-weight:600;color:#1e293b">How do I configure different settings per MSM site in config.php?</h4>
+<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
+  <strong>Easiest answer: skip config.php for MSM and use the CP form.</strong> The settings table (<code>exp_edge_cache_tags_settings</code>) is keyed by <code>site_id</code>, so each MSM site has its own row. Switch the EE site picker at the top of the CP, open Edge Cache Tags, configure backend + credentials independently for that site. Repeat for each site. No code edits.
+</p>
+<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
+  If you really want config-as-code, <code>config.php</code> is shared across all MSM sites — so you have to gate the items on the requesting hostname (the <code>site_id</code> isn\'t resolved this early in EE\'s bootstrap). Pattern:
+</p>
+<pre style="background:#0f172a;color:#e2e8f0;padding:10px 14px;border-radius:6px;font-size:12px;font-family:ui-monospace,Menlo,monospace;line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-word">$host = isset($_SERVER[\'HTTP_HOST\']) ? strtolower($_SERVER[\'HTTP_HOST\']) : \'\';
+
+if (strpos($host, \'platformgamers.com\') !== false) {
+    $config[\'edge_cache_tags_backend\']         = \'nivoli\';
+    $config[\'edge_cache_tags_nivoli_endpoint\'] = \'https://console.nivoli.com/cache/aaaaaaaa\';
+} elseif (strpos($host, \'rpggamers.com\') !== false) {
+    $config[\'edge_cache_tags_backend\']         = \'nivoli\';
+    $config[\'edge_cache_tags_nivoli_endpoint\'] = \'https://console.nivoli.com/cache/bbbbbbbb\';
+} elseif (strpos($host, \'adventuregamers.com\') !== false) {
+    $config[\'edge_cache_tags_backend\']         = \'fastly\';
+    $config[\'edge_cache_tags_fastly_service\']  = \'...\';
+    $config[\'edge_cache_tags_fastly_api_key\']  = \'...\';
+}</pre>
+<p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
+  The addon\'s config resolution still applies inside each branch: config.php items win over the CP form. The 🔒 lock indicator shows you which fields are pinned <em>for the current MSM site you\'re viewing</em>. So you can pin the backend via config.php for some sites and let others use the CP form — mix and match.
+</p>
+<p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
+  <strong>Multi-host Nivoli accounts:</strong> if you want one Nivoli endpoint serving multiple MSM hostnames (single dashboard URL covering all sites), ask Nivoli support to link your tokens — the per-site <code>site-&lt;id&gt;-</code> tag prefix routes purges to the right hostname automatically. Otherwise, each MSM site gets its own dashboard URL.
+</p>
+
+<h4 style="margin:14px 0 4px;font-size:13.5px;font-weight:600;color:#1e293b">I curled my site and didn\'t see the headers — what gives?</h4>
+<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
+  Almost always: <strong>your edge cache is still serving the version it cached BEFORE the addon was installed</strong>. The addon only sets headers on responses EE renders fresh — pre-cached HITs carry whatever headers were there at the time of original caching. Look for <code>cf-cache-status: HIT</code> in the response — that confirms the answer didn\'t come from EE just now.
+</p>
+<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">Bypass cache to see fresh-from-origin:</p>
 <pre style="background:#0f172a;color:#e2e8f0;padding:10px 14px;border-radius:6px;font-size:12px;font-family:ui-monospace,Menlo,monospace;overflow-x:auto;white-space:pre-wrap;word-break:break-word">curl -I "https://yoursite.com/some/page?nocache=$(date +%s)"</pre>
-<p>The random query param defeats Cloudflare\'s cache key (and most reverse-proxies). Look for <code>Surrogate-Key:</code> and <code>Cache-Tag:</code> in the response. If they\'re there, you\'re good — the addon is emitting; existing CF cache will start carrying them as pages expire / get purged.</p>
-<p>If headers are STILL missing on a cache-busted request: check the <strong>Diagnostics</strong> card on this page — extension hooks should be 4 enabled rows. Save a channel entry and watch the <strong>Recent activity</strong> log for a dispatch. If nothing appears there either, the addon\'s hooks aren\'t firing — uninstall + reinstall is the cleanest recovery.</p>
+<p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
+  The random query param defeats Cloudflare\'s cache key (and most reverse-proxies). Look for <code>Surrogate-Key:</code> and <code>Cache-Tag:</code> in the cache-busted response. If they\'re there, the addon is working — existing CF cache will start carrying them as pages naturally expire or get purged. If they\'re STILL missing on a cache-busted request, check the <strong>Diagnostics</strong> card above (extension hooks should be 4 enabled rows) and the <strong>Recent activity</strong> log; uninstall + reinstall is the recovery path.
+</p>
 
 <h3>Why <code>entry-&lt;id&gt;</code> and not <code>url_title</code> or the full URL?</h3>
 <ul>

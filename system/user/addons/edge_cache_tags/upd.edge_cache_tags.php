@@ -39,7 +39,7 @@ class Edge_cache_tags_upd extends Installer
         // row for us. Without that row, EE doesn't show the settings
         // gear on the Add-Ons card. Backfill on every update() so an
         // upgrade from v2.0.0 (or any pre-CP version) self-heals without
-        // requiring the operator to uninstall+reinstall. v2.3.3 adds the
+        // requiring the operator to uninstall+reinstall. v2.3.4 adds the
         // sidebar menu_items row to the same idempotent path.
         $this->ensureModuleRow();
         $this->ensureMenuItem();
@@ -59,7 +59,7 @@ class Edge_cache_tags_upd extends Installer
         $row = ee()->db->where('module_name', 'Edge_cache_tags')
             ->get('modules')->row_array();
         $payload = [
-            'module_version'     => '2.3.3',
+            'module_version'     => '2.3.4',
             'has_cp_backend'     => 'y',
             'has_publish_fields' => 'n',
         ];
