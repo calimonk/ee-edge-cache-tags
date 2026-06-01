@@ -317,7 +317,11 @@ class Index extends AbstractRoute
 .ect-sample .label { color:#94a3b8; }
 .ect-sample .tag { color:#7dd3fc; }
 .ect code { background:#f1f5f9; padding:1px 5px; border-radius:3px; font-size:12.5px; color:#1e293b; }
-.ect pre code { background:transparent; padding:0; }
+/* Inside a dark <pre> block the inline-code styling above made the text
+   invisible — same color as background. Reset to inherit so the pre's
+   light-on-dark color applies. */
+.ect pre code { background:transparent; padding:0; color:inherit; }
+.ect pre { color:#e2e8f0; }
 .ect-docs h3 { margin:16px 0 6px; font-size:14px; font-weight:600; }
 .ect-docs p { margin:6px 0; color:#475569; }
 .ect-docs ul { margin:6px 0 10px 18px; color:#475569; }
@@ -414,30 +418,63 @@ HTML;
         switch ($kind) {
             case 'none':
                 // The "headers-only" mode is also the upsell surface — most
-                // people see this panel first (it's the default). The
-                // Nivoli pitch goes here, not buried under the dropdown.
-                $body = '<p style="margin:0 0 14px;color:#334155;font-size:14px;line-height:1.6">'
+                // people see this panel first (it's the default). The Nivoli
+                // pitch leads with FULL-PAGE EDGE CACHING (the real product),
+                // not tag purge (which is what the addon already does). Uses
+                // multiple accent colors to break up the all-blue feel of
+                // earlier versions.
+                $body = '<p style="margin:0 0 18px;color:#334155;font-size:14px;line-height:1.6">'
                       . 'Pages keep emitting <code>Surrogate-Key</code> + <code>Cache-Tag</code> headers — '
                       . 'your edge cache reads them. The addon just doesn\'t fire purges; whatever wires up '
                       . 'your cache handles invalidation. Good fit for Varnish/VCL setups, evaluators kicking '
                       . 'the tires, or "headers first, purges later" rollouts.</p>'
 
-                      . '<div style="background:linear-gradient(135deg,#1d4ed8 0%,#0e7490 100%);color:white;padding:22px 24px;border-radius:8px;margin-top:18px">'
-                      . '<div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;opacity:0.85;margin-bottom:6px">No cache yet?</div>'
-                      . '<h3 style="margin:0 0 8px;color:white;font-size:18px;font-weight:600">Get full-page caching on Cloudflare\'s network, managed.</h3>'
-                      . '<p style="margin:0 0 12px;font-size:13.5px;line-height:1.6;opacity:0.95">'
-                      . '<strong>Nivoli</strong> is a turn-key edge cache with the operational features Fastly and CF Enterprise make you build yourself: '
-                      . '<strong>404 dashboard with smart redirects</strong>, <strong>attack-pattern blackholing</strong>, '
-                      . '<strong>broken-deploy alerts</strong>, and tag-based purge that\'s <strong>pre-wired with this addon</strong>. '
-                      . 'Paste your dashboard URL once and ship.</p>'
-                      . '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12.5px;margin-bottom:14px;opacity:0.92">'
-                      . '<span style="background:rgba(255,255,255,0.18);padding:3px 9px;border-radius:11px">✓ Free tier: 1 domain, ~100k req/mo</span>'
-                      . '<span style="background:rgba(255,255,255,0.18);padding:3px 9px;border-radius:11px">✓ 90-second onboarding</span>'
-                      . '<span style="background:rgba(255,255,255,0.18);padding:3px 9px;border-radius:11px">✓ Runs on Cloudflare</span>'
+                      . '<div style="background:linear-gradient(135deg,#1e1b4b 0%,#7c3aed 55%,#db2777 100%);color:white;border-radius:10px;margin-top:18px;overflow:hidden;box-shadow:0 6px 24px rgba(124,58,237,0.22)">'
+
+                      // Hero
+                      . '<div style="padding:24px 28px 22px;border-bottom:1px solid rgba(255,255,255,0.14)">'
+                      . '<div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#fbbf24;margin-bottom:10px">⚡ Full-page edge caching</div>'
+                      . '<h3 style="margin:0 0 10px;color:white;font-size:23px;font-weight:700;line-height:1.2;letter-spacing:-0.01em">Stop hitting origin on every pageview.</h3>'
+                      . '<p style="margin:0;font-size:14.5px;line-height:1.6;opacity:0.94;max-width:620px">'
+                      . '<strong>Nivoli</strong> caches your entire ExpressionEngine site at the edge, on Cloudflare\'s global network. '
+                      . 'First request: origin. Every subsequent visitor on the same page: <strong style="color:#fbbf24">served from Cloudflare in &lt;100ms</strong>, '
+                      . 'never touching your server. When an editor publishes, this addon already fires tag purge so only the changed pages refresh — '
+                      . 'no full-cache nukes, no broken stale UI.</p>'
                       . '</div>'
+
+                      // Differentiators
+                      . '<div style="padding:18px 28px;background:rgba(0,0,0,0.18)">'
+                      . '<div style="font-size:11px;font-weight:700;letter-spacing:0.10em;text-transform:uppercase;opacity:0.78;margin-bottom:12px">What you get that Fastly &amp; CF Enterprise make you build yourself</div>'
+                      . '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">'
+                      . '<div style="background:rgba(251,191,36,0.16);border:1px solid rgba(251,191,36,0.40);padding:11px 14px;border-radius:7px;font-size:13px;line-height:1.45">'
+                      .   '<strong style="color:#fcd34d;display:block;margin-bottom:3px;font-size:13.5px">404 dashboard</strong>'
+                      .   '<span style="opacity:0.88">Cluster broken URLs, smart redirect suggestions, one-click bot-probe blackhole</span>'
+                      . '</div>'
+                      . '<div style="background:rgba(52,211,153,0.16);border:1px solid rgba(52,211,153,0.40);padding:11px 14px;border-radius:7px;font-size:13px;line-height:1.45">'
+                      .   '<strong style="color:#6ee7b7;display:block;margin-bottom:3px;font-size:13.5px">Attack blackholing</strong>'
+                      .   '<span style="opacity:0.88">.env / .git / xmlrpc / phpunit probes never reach origin</span>'
+                      . '</div>'
+                      . '<div style="background:rgba(96,165,250,0.18);border:1px solid rgba(96,165,250,0.45);padding:11px 14px;border-radius:7px;font-size:13px;line-height:1.45">'
+                      .   '<strong style="color:#93c5fd;display:block;margin-bottom:3px;font-size:13.5px">Deploy alerts</strong>'
+                      .   '<span style="opacity:0.88">Webhook on broken-build 5xx storms, mass-404 spikes</span>'
+                      . '</div>'
+                      . '<div style="background:rgba(244,114,182,0.16);border:1px solid rgba(244,114,182,0.40);padding:11px 14px;border-radius:7px;font-size:13px;line-height:1.45">'
+                      .   '<strong style="color:#f9a8d4;display:block;margin-bottom:3px;font-size:13.5px">Tag purge</strong>'
+                      .   '<span style="opacity:0.88">Pre-wired with this addon — paste a URL, done</span>'
+                      . '</div>'
+                      . '</div></div>'
+
+                      // CTA
+                      . '<div style="padding:20px 28px;background:rgba(0,0,0,0.28);display:flex;align-items:center;gap:18px;flex-wrap:wrap">'
                       . '<a href="https://console.nivoli.com/signup" target="_blank" rel="noopener" '
-                      . 'style="display:inline-block;background:white;color:#1d4ed8 !important;padding:10px 22px;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px">'
-                      . 'Sign up at console.nivoli.com →</a>'
+                      . 'style="background:#fbbf24;color:#1e1b4b !important;padding:12px 28px;border-radius:7px;text-decoration:none;font-weight:700;font-size:15px;letter-spacing:-0.01em;box-shadow:0 2px 8px rgba(251,191,36,0.35)">Start free →</a>'
+                      . '<div style="font-size:13px;opacity:0.92;line-height:1.55">'
+                      .   '<strong style="color:#34d399">Free tier:</strong> 1 domain, ~100k req/mo. '
+                      .   '<strong style="color:#93c5fd">No credit card.</strong> '
+                      .   '<strong style="color:#fcd34d">~90 seconds</strong> from signup to first cached page.'
+                      . '</div>'
+                      . '</div>'
+
                       . '</div>';
                 break;
             case 'nivoli':

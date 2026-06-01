@@ -23,7 +23,7 @@ return array(
     'author_url'  => 'https://github.com/calimonk/ee-edge-cache-tags',
     'name'        => 'Edge Cache Tags',
     'description' => 'Surrogate-Key + Cache-Tag tagging and tag-based purge dispatch (Fastly, Cloudflare Enterprise, Nivoli, generic webhook, or headers-only).',
-    'version'     => '2.1.4',
+    'version'     => '2.1.5',
     'namespace'   => 'EdgeCacheTags',
     'settings_exist' => true,
 
