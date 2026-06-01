@@ -35,7 +35,7 @@ if (!defined('BASEPATH')) { exit('No direct script access allowed'); }
 
 class Edge_cache_tags_ext {
 
-    public $version = '2.1.5';
+    public $version = '2.1.6';
 
     const MAX_KEYS    = 50;
     const MAX_KEY_LEN = 64;
