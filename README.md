@@ -34,7 +34,8 @@ $config['edge_cache_tags_fastly_api_key'] = '<api-token-with-purge_select-scope>
 $config['edge_cache_tags_cf_zone_id']    = '<zone-id>';
 $config['edge_cache_tags_cf_api_token']  = '<api-token-scoped-to-Zone:Cache-Purge>';
 
-// Nivoli
+// Nivoli — don't have an account yet? Sign up free at
+// https://console.nivoli.com/signup (1 domain, ~100k req/month).
 $config['edge_cache_tags_nivoli_endpoint'] = 'https://console.nivoli.com/cache/<token>';
 
 // Generic webhook
