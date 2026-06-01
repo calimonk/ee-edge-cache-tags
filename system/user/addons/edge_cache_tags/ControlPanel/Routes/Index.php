@@ -187,15 +187,30 @@ class Index extends AbstractRoute
         ];
 
         // 2. Extension hooks registered + enabled. Should be 3:
-        //    template_post_parse, after_channel_entry_save, after_channel_entry_delete
+        //    cp_custom_menu, template_post_parse, after_channel_entry_save,
+        //    after_channel_entry_delete
         $hookRows = (int) ee()->db->where([
             'class'   => 'Edge_cache_tags_ext',
             'enabled' => 'y',
         ])->count_all_results('extensions');
         $checks[] = [
             'label'  => 'Extension hooks',
-            'ok'     => $hookRows >= 3,
-            'detail' => $hookRows . ' enabled row(s) — expected 3 (template_post_parse, after_channel_entry_save, after_channel_entry_delete)',
+            'ok'     => $hookRows >= 4,
+            'detail' => $hookRows . ' enabled row(s) — expected 4 (cp_custom_menu, template_post_parse, after_channel_entry_save, after_channel_entry_delete)',
+        ];
+
+        // 2b. Sidebar menu item — required for the cp_custom_menu hook to
+        // fire. EE only iterates exp_menu_items rows.
+        $menuRows = (int) ee()->db->where([
+            'type' => 'addon',
+            'data' => 'Edge_cache_tags_ext',
+        ])->count_all_results('menu_items');
+        $checks[] = [
+            'label'  => 'Sidebar menu entry',
+            'ok'     => $menuRows > 0,
+            'detail' => $menuRows > 0
+                ? 'present — addon shows in the CP sidebar'
+                : 'missing — addon won\'t appear in the CP sidebar (Update the addon to backfill)',
         ];
 
         // 3. Addon files on disk.
@@ -864,7 +879,7 @@ HTML;
             CURLOPT_TIMEOUT        => 4,
             CURLOPT_CONNECTTIMEOUT => 2,
             CURLOPT_FAILONERROR    => false,
-            CURLOPT_USERAGENT      => 'edge-cache-tags-ee-cp/2.3.0',
+            CURLOPT_USERAGENT      => 'edge-cache-tags-ee-cp/2.3.1',
         ]);
         $body = @curl_exec($ch);
         $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);

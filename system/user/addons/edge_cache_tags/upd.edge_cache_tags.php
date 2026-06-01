@@ -26,6 +26,7 @@ class Edge_cache_tags_upd extends Installer
     {
         parent::install();
         $this->ensureModuleRow();
+        $this->ensureMenuItem();
         $this->createTables();
         $this->seedSettings();
         return true;
@@ -38,8 +39,10 @@ class Edge_cache_tags_upd extends Installer
         // row for us. Without that row, EE doesn't show the settings
         // gear on the Add-Ons card. Backfill on every update() so an
         // upgrade from v2.0.0 (or any pre-CP version) self-heals without
-        // requiring the operator to uninstall+reinstall.
+        // requiring the operator to uninstall+reinstall. v2.3.1 adds the
+        // sidebar menu_items row to the same idempotent path.
         $this->ensureModuleRow();
+        $this->ensureMenuItem();
         $this->createTables();
         $this->seedSettings();
         return true;
@@ -56,7 +59,7 @@ class Edge_cache_tags_upd extends Installer
         $row = ee()->db->where('module_name', 'Edge_cache_tags')
             ->get('modules')->row_array();
         $payload = [
-            'module_version'     => '2.3.0',
+            'module_version'     => '2.3.1',
             'has_cp_backend'     => 'y',
             'has_publish_fields' => 'n',
         ];
@@ -67,17 +70,47 @@ class Edge_cache_tags_upd extends Installer
         }
     }
 
+    /**
+     * Make sure exp_menu_items has a row pointing at our extension
+     * class. EE only invokes cp_custom_menu hooks for classes referenced
+     * here; without this row the addon won't appear in the CP sidebar
+     * (the hook itself can be registered, but EE never calls it).
+     * Set_id=1 is the default sidebar set in stock EE installs.
+     * Idempotent.
+     */
+    private function ensureMenuItem(): void
+    {
+        if (!ee()->db->table_exists('menu_items')) return;
+        $exists = (int) ee()->db->where([
+            'type' => 'addon',
+            'data' => 'Edge_cache_tags_ext',
+        ])->count_all_results('menu_items');
+        if ($exists > 0) return;
+        ee()->db->insert('menu_items', [
+            'parent_id' => 0,
+            'set_id'    => 1,
+            'name'      => 'Edge Cache Tags',
+            'data'      => 'Edge_cache_tags_ext',
+            'type'      => 'addon',
+            'sort'      => 100,
+        ]);
+    }
+
     public function uninstall()
     {
         parent::uninstall();
         ee()->load->dbforge();
         ee()->dbforge->drop_table('edge_cache_tags_settings', true);
         ee()->dbforge->drop_table('edge_cache_tags_purge_log', true);
-        // Clean up the modules row in case parent::uninstall() didn't
-        // (it normally would, but we backfilled it ourselves in update()
-        // so the addon claims it on the way out too).
+        // Clean up the modules + menu_items rows in case parent::uninstall()
+        // didn't (it normally would, but we backfilled them ourselves in
+        // update() so we own removal too).
         if (ee()->db->table_exists('modules')) {
             ee()->db->where('module_name', 'Edge_cache_tags')->delete('modules');
+        }
+        if (ee()->db->table_exists('menu_items')) {
+            ee()->db->where(['type' => 'addon', 'data' => 'Edge_cache_tags_ext'])
+                ->delete('menu_items');
         }
         return true;
     }

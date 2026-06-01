@@ -23,11 +23,19 @@ return array(
     'author_url'  => 'https://github.com/calimonk/ee-edge-cache-tags',
     'name'        => 'Edge Cache Tags',
     'description' => 'Surrogate-Key + Cache-Tag tagging and tag-based purge dispatch (Fastly, Cloudflare Enterprise, Nivoli, generic webhook, or headers-only).',
-    'version'     => '2.3.0',
+    'version'     => '2.3.1',
     'namespace'   => 'EdgeCacheTags',
     'settings_exist' => true,
 
     'hooks' => array(
+        // Register the addon in the EE CP sidebar (CUSTOM section). EE
+        // only invokes this hook for classes referenced by a row in
+        // exp_menu_items; the installer adds that row in ensureMenuItem().
+        array(
+            'hook'     => 'cp_custom_menu',
+            'method'   => 'cp_custom_menu',
+            'priority' => 10,
+        ),
         // Emit the Surrogate-Key + Cache-Tag headers on the final parsed
         // template.
         array(

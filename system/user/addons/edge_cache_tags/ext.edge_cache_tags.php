@@ -35,7 +35,7 @@ if (!defined('BASEPATH')) { exit('No direct script access allowed'); }
 
 class Edge_cache_tags_ext {
 
-    public $version = '2.3.0';
+    public $version = '2.3.1';
 
     const MAX_KEYS    = 50;
     const MAX_KEY_LEN = 64;
@@ -102,6 +102,23 @@ class Edge_cache_tags_ext {
             return 'none';
         }
         return $b;
+    }
+
+    // ---- Sidebar menu ----------------------------------------------------
+
+    /**
+     * cp_custom_menu($menu) — gets called by EE when rendering the CP
+     * sidebar IF exp_menu_items has a row with type='addon' and
+     * data='Edge_cache_tags_ext'. The installer guarantees that row
+     * exists. Adds an "Edge Cache Tags" entry under the CUSTOM section
+     * linking to our Index route.
+     */
+    public function cp_custom_menu($menu) {
+        if (!defined('REQ') || REQ !== 'CP') return true;
+        try {
+            $menu->addItem('Edge Cache Tags',
+                ee('CP/URL')->make('addons/settings/edge_cache_tags/index'));
+        } catch (\Throwable $e) { /* don't break the CP on render error */ }
     }
 
     // ---- Header emission -------------------------------------------------
