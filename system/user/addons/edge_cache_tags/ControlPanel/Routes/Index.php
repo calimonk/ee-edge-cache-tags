@@ -373,7 +373,12 @@ class Index extends AbstractRoute
         $eff = $diag['effective'];
         $effBackend = $eff['backend'] ?: 'none';
         $alert = $msg ? '<div class="ect-alert">' . $h($msg) . '</div>' : '';
-        $backendSelect = $this->renderBackendSelect($r['backend'], isset($overrides['backend']));
+        // When the backend is config-pinned, the override value wins.
+        // Without this, the dropdown rendered the DB row's value (often
+        // 'none') even though config.php had a different pinned value,
+        // which made the lock indicator look wrong / confusing.
+        $backendShown = isset($overrides['backend']) ? (string) $overrides['backend'] : (string) $r['backend'];
+        $backendSelect = $this->renderBackendSelect($backendShown, isset($overrides['backend']));
         $configBlocks = $this->renderBackendConfigBlocks($r, $overrides, $effBackend);
         $diagBlock = $this->renderDiagBlock($diag);
         $activityBlock = $this->renderActivityBlock($siteId);
@@ -576,7 +581,21 @@ HTML;
         if ($locked) {
             // Submit the locked value so save() still gets it.
             $select .= '<input type="hidden" name="backend" value="' . htmlspecialchars($current) . '">';
-            $select .= ' <span class="lock-note">🔒 set via config.php (edge_cache_tags_backend)</span>';
+            // Same lock-detail UI as the per-backend credential fields:
+            // surface the actual pinned value + how to unlock. The user
+            // needs to know WHICH file is pinning it, not just that
+            // *something* is.
+            $shown = $labels[$current] ?? $current;
+            $select .= '<div class="lock-detail">'
+                . '<span class="lock-tag">🔒 PINNED VIA CONFIG</span> '
+                . '<span class="lock-current">' . htmlspecialchars($shown) . ' (' . htmlspecialchars($current) . ')</span>'
+                . '<span class="lock-howto">'
+                . 'Pinned by <code>$config[\'edge_cache_tags_backend\']</code> or <code>$assign_to_config[\'edge_cache_tags_backend\']</code>. '
+                . 'Likely files: <code>system/user/config/config.php</code>, the site\'s <code>index.php</code>, or <code>admin.php</code>. '
+                . 'Grep your install with:<br>'
+                . '<code style="display:inline-block;margin-top:4px">grep -rn edge_cache_tags_backend system/user/config/ index.php admin.php</code>'
+                . '</span>'
+                . '</div>';
         }
         return $select;
     }
