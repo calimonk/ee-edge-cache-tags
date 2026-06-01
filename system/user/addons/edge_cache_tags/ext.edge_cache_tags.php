@@ -35,7 +35,7 @@ if (!defined('BASEPATH')) { exit('No direct script access allowed'); }
 
 class Edge_cache_tags_ext {
 
-    public $version = '2.4.7';
+    public $version = '2.4.8';
 
     const MAX_KEYS    = 50;
     const MAX_KEY_LEN = 64;
@@ -172,14 +172,31 @@ class Edge_cache_tags_ext {
             // (space-separated); Cloudflare Enterprise reads Cache-Tag
             // (comma-separated). Harmless duplication when one cache is
             // in the path and the other isn't.
-            ee()->output->set_header('Surrogate-Key: ' . implode(' ', $keys));
-            ee()->output->set_header('Cache-Tag: ' . implode(',', $keys));
-            // Belt-and-suspenders for environments where Output->set_header()
-            // doesn't reach the client (some setups serve cached output via
-            // a path that bypasses Output::_display). Direct header() call
-            // hits PHP-FPM's response unconditionally. Only emitted in trace
-            // mode — if these show up in trace but set_header()'s don't, we
-            // have isolated the bug to the EE Output buffer.
+            $sk = 'Surrogate-Key: ' . implode(' ', $keys);
+            $ct = 'Cache-Tag: '    . implode(',', $keys);
+            ee()->output->set_header($sk);
+            ee()->output->set_header($ct);
+            // v2.4.8 fallback: also emit via plain header(). On some EE
+            // installs (CI Output overrides, FastCGI peculiarities, custom
+            // template-cache fast paths) the ee()->output buffer is
+            // bypassed during response finalize — set_header() queues
+            // values that never flush. header() writes straight to
+            // PHP-FPM's outgoing response and reliably reaches the wire.
+            // On a healthy install the values come out once either way
+            // (PHP normalizes duplicate header names). On a broken-Output
+            // install this is the only thing that actually delivers the
+            // tags. Trace mode (v2.4.7) was what isolated this in the
+            // wild on a customer deployment.
+            if (!headers_sent()) {
+                @header($sk);
+                @header($ct);
+            }
+            // Trace-only marker so an operator can prove via curl which
+            // path is delivering. If X-Edge-Cache-Tags-Direct shows up in
+            // a response but Surrogate-Key/Cache-Tag don't, the user is
+            // on an Output-buffer-broken install AND ran a pre-v2.4.8
+            // version (because v2.4.8 also emits Surrogate-Key/Cache-Tag
+            // via header() now).
             if ($trace) {
                 @header('X-Edge-Cache-Tags-Direct: ran keys=' . count($keys));
             }
