@@ -433,27 +433,57 @@ HTML;
 
                       . '<div style="background:linear-gradient(135deg,#1e1b4b 0%,#7c3aed 55%,#db2777 100%);color:white;border-radius:10px;margin-top:18px;overflow:hidden;box-shadow:0 6px 24px rgba(124,58,237,0.22)">'
 
-                      // Hero — lead with the key insight: Cloudflare DOESN\'T
-                      // cache HTML out of the box. That\'s the differentiator,
-                      // not the cache itself.
-                      . '<div style="padding:26px 28px 22px;border-bottom:1px solid rgba(255,255,255,0.14)">'
+                      // ---- Top row: hero (left) + secondary differentiators (right) ----
+                      // Side-by-side on wide screens; stacks on narrow. Uses the
+                      // horizontal space that the hero copy alone leaves blank.
+                      . '<div style="display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:0;border-bottom:1px solid rgba(255,255,255,0.14)">'
+
+                      // Hero (left) — lead with the contradiction.
+                      . '<div style="padding:26px 28px 22px">'
                       . '<div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#fbbf24;margin-bottom:10px">⚡ Full-page HTML caching on Cloudflare</div>'
                       . '<h3 style="margin:0 0 12px;color:white;font-size:24px;font-weight:700;line-height:1.2;letter-spacing:-0.015em">Cloudflare doesn\'t cache HTML.<br><span style="color:#fbbf24">Nivoli does.</span></h3>'
-                      . '<p style="margin:0 0 10px;font-size:14.5px;line-height:1.62;opacity:0.95;max-width:640px">'
+                      . '<p style="margin:0 0 10px;font-size:14.5px;line-height:1.62;opacity:0.95">'
                       . 'Out of the box, Cloudflare caches your CSS, JS, and images at the edge — but every HTML pageview still round-trips to your origin server. '
                       . '<strong>Nivoli adds the missing layer:</strong> full-page HTML caching on Cloudflare\'s global network. '
                       . 'Every visitor hits Cloudflare; only <strong style="color:#fbbf24">cache MISSes touch origin</strong>.</p>'
-                      . '<p style="margin:0;font-size:14px;line-height:1.6;opacity:0.92;max-width:640px">'
+                      . '<p style="margin:0;font-size:14px;line-height:1.6;opacity:0.92">'
                       . '<strong>And it stays correct.</strong> When an editor saves an entry in EE, this addon fires tag purge — only the pages that show that entry refresh, never the whole cache. '
-                      . 'You get speed <em>and</em> consistency. No "wait 30 minutes for the homepage to update" UX.</p>'
+                      . 'Speed <em>and</em> consistency.</p>'
                       . '</div>'
 
-                      // Featured: 404 / 5xx management — these are what
-                      // operators don\'t realize they want until they have
-                      // them. Foreground them as the lead differentiator pair.
+                      // Right column — secondary differentiators. Vertical
+                      // stack, compact. Stale-on-error added as the
+                      // reliability angle the all-blue version was missing.
+                      . '<div style="padding:22px 24px 18px;background:rgba(0,0,0,0.20);border-left:1px solid rgba(255,255,255,0.10);display:flex;flex-direction:column;gap:10px">'
+
+                      . '<div style="background:rgba(52,211,153,0.14);border:1px solid rgba(52,211,153,0.38);padding:11px 14px;border-radius:7px;font-size:12.5px;line-height:1.5">'
+                      .   '<strong style="color:#6ee7b7;display:block;margin-bottom:3px;font-size:13px">🛡 Attack blackholing</strong>'
+                      .   '<span style="opacity:0.88">.env / .git / wp-admin / xmlrpc probes return 404 at the edge. Origin never sees them.</span>'
+                      . '</div>'
+
+                      . '<div style="background:rgba(192,132,252,0.16);border:1px solid rgba(192,132,252,0.42);padding:11px 14px;border-radius:7px;font-size:12.5px;line-height:1.5">'
+                      .   '<strong style="color:#d8b4fe;display:block;margin-bottom:3px;font-size:13px">⏱ Stale-on-error fallback</strong>'
+                      .   '<span style="opacity:0.88">Origin down? Cached copies keep serving visitors for up to 7 days. Your site stays up while you fix the backend.</span>'
+                      . '</div>'
+
+                      . '<div style="background:rgba(96,165,250,0.16);border:1px solid rgba(96,165,250,0.42);padding:11px 14px;border-radius:7px;font-size:12.5px;line-height:1.5">'
+                      .   '<strong style="color:#93c5fd;display:block;margin-bottom:3px;font-size:13px">📢 Deploy alerts</strong>'
+                      .   '<span style="opacity:0.88">Webhook on 5xx storms (broken release) or mass-404 spikes (deleted route).</span>'
+                      . '</div>'
+
+                      . '<div style="background:rgba(244,114,182,0.14);border:1px solid rgba(244,114,182,0.38);padding:11px 14px;border-radius:7px;font-size:12.5px;line-height:1.5">'
+                      .   '<strong style="color:#f9a8d4;display:block;margin-bottom:3px;font-size:13px">↻ URL rules</strong>'
+                      .   '<span style="opacity:0.88">Redirect old URLs / block specific patterns at the edge — never round-trip to origin.</span>'
+                      . '</div>'
+
+                      . '</div>'
+                      . '</div>'
+
+                      // Featured: 404 / 5xx dashboards — these are the
+                      // killer ops features. Full-width pair below the hero.
                       . '<div style="padding:22px 28px 18px;background:rgba(0,0,0,0.16)">'
                       . '<div style="font-size:11px;font-weight:700;letter-spacing:0.10em;text-transform:uppercase;opacity:0.78;margin-bottom:14px">Operational dashboards that ship with the cache</div>'
-                      . '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">'
+                      . '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">'
 
                       // 404 management
                       . '<div style="background:rgba(251,191,36,0.14);border:1px solid rgba(251,191,36,0.45);padding:14px 16px;border-radius:8px;line-height:1.5">'
@@ -469,23 +499,6 @@ HTML;
                       .   '<span style="font-size:13px;opacity:0.88">Status-code breakdown per host. Captured origin response bodies. Top error URLs sorted by hit rate. Block patterns that should never reach origin — like emoji-laden bot URIs that crash your PHP.</span>'
                       . '</div>'
 
-                      . '</div></div>'
-
-                      // Secondary differentiators
-                      . '<div style="padding:14px 28px 18px;background:rgba(0,0,0,0.20)">'
-                      . '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">'
-                      . '<div style="background:rgba(52,211,153,0.14);border:1px solid rgba(52,211,153,0.38);padding:10px 13px;border-radius:6px;font-size:12.5px;line-height:1.45">'
-                      .   '<strong style="color:#6ee7b7;display:block;margin-bottom:2px;font-size:13px">Attack blackholing</strong>'
-                      .   '<span style="opacity:0.88">.env / .git / wp-admin / xmlrpc probes return 404 at the edge. Origin never sees them.</span>'
-                      . '</div>'
-                      . '<div style="background:rgba(96,165,250,0.16);border:1px solid rgba(96,165,250,0.42);padding:10px 13px;border-radius:6px;font-size:12.5px;line-height:1.45">'
-                      .   '<strong style="color:#93c5fd;display:block;margin-bottom:2px;font-size:13px">Deploy alerts</strong>'
-                      .   '<span style="opacity:0.88">Webhook on 5xx storms (broken release) or mass-404 spikes (deleted route).</span>'
-                      . '</div>'
-                      . '<div style="background:rgba(244,114,182,0.14);border:1px solid rgba(244,114,182,0.38);padding:10px 13px;border-radius:6px;font-size:12.5px;line-height:1.45">'
-                      .   '<strong style="color:#f9a8d4;display:block;margin-bottom:2px;font-size:13px">URL rules</strong>'
-                      .   '<span style="opacity:0.88">Redirect old URLs / block specific patterns at the edge — never round-trip to origin.</span>'
-                      . '</div>'
                       . '</div></div>'
 
                       // CTA
