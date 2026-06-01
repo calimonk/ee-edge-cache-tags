@@ -14,11 +14,28 @@ archives) in a single API call — no URL enumeration.
 
 Drop the `system/user/addons/edge_cache_tags/` directory into your EE
 install (or git-submodule this repo at `system/user/addons/`). Then
-**CP → Developer → Add-Ons → Edge Cache Tags → Install Extension**.
+**CP → Developer → Add-Ons → Edge Cache Tags → Install**. The installer
+creates one settings row per MSM site (default `backend=none`) and
+registers the three hooks (`template_post_parse`,
+`after_channel_entry_save`, `after_channel_entry_delete`).
 
 ## Configure
 
-Edit `system/user/config/config.php`:
+Two equivalent ways — pick whichever fits your workflow:
+
+### CP settings page (recommended for non-developers)
+
+**CP → Developer → Add-Ons → Edge Cache Tags** opens a settings +
+diagnostics page. Per-site backend dropdown, credential fields, sample
+emitted keys, and a tick-list of installation health checks (hook
+registration, addon files present, MSM site count, backend creds OK).
+
+On MSM installs, switch the EE site picker first to configure each
+site.
+
+### config.php (developers / config-as-code)
+
+If you prefer, set the values in `system/user/config/config.php`:
 
 ```php
 // Pick a backend
@@ -42,6 +59,10 @@ $config['edge_cache_tags_nivoli_endpoint'] = 'https://console.nivoli.com/cache/<
 $config['edge_cache_tags_webhook_url']    = 'https://your-edge.example.com/purge';
 $config['edge_cache_tags_webhook_secret'] = '<optional bearer secret>';
 ```
+
+**config.php beats the CP form.** When both are set, the addon uses
+config.php values and the CP form shows a 🔒 lock indicator next to
+the pinned fields so admins know why their input isn't taking effect.
 
 ## Backends
 

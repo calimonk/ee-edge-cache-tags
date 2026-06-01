@@ -10,6 +10,9 @@
  *   - A template plugin ({exp:edge_cache_tags:key}) so templates can
  *     declare entry-level surrogate keys from inside a channel:entries
  *     loop where the entry/channel/category context is in scope.
+ *   - A CP settings + diagnostics page so site admins can configure the
+ *     backend, see which hooks are registered, and preview the emitted
+ *     keys without dropping to config.php.
  *
  * Hooks register here (modern EE addon.setup.php style) so no
  * activate_extension() bookkeeping is needed.
@@ -20,9 +23,9 @@ return array(
     'author_url'  => 'https://github.com/calimonk/ee-edge-cache-tags',
     'name'        => 'Edge Cache Tags',
     'description' => 'Surrogate-Key + Cache-Tag tagging and tag-based purge dispatch (Fastly, Cloudflare Enterprise, Nivoli, generic webhook, or headers-only).',
-    'version'     => '2.0.0',
+    'version'     => '2.1.0',
     'namespace'   => 'EdgeCacheTags',
-    'settings_exist' => false,
+    'settings_exist' => true,
 
     'hooks' => array(
         // Emit the Surrogate-Key + Cache-Tag headers on the final parsed

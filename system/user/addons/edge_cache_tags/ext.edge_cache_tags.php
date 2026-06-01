@@ -35,7 +35,7 @@ if (!defined('BASEPATH')) { exit('No direct script access allowed'); }
 
 class Edge_cache_tags_ext {
 
-    public $version = '2.0.0';
+    public $version = '2.1.0';
 
     const MAX_KEYS    = 50;
     const MAX_KEY_LEN = 64;
@@ -44,24 +44,64 @@ class Edge_cache_tags_ext {
     private static $pending = array();
     /** @var bool */
     private static $shutdown_hooked = false;
+    /** @var array|null lazy-loaded settings row for the current MSM site */
+    private static $cached_settings = null;
+    /** @var int|null site_id the cache was built for */
+    private static $cached_settings_site = null;
 
     public function __construct() {
         // EE instantiates extensions without args.
     }
 
     // ---- Config ----------------------------------------------------------
+    //
+    // Resolution order for every setting:
+    //   1. config.php item (edge_cache_tags_<key>) — wins if non-empty
+    //   2. exp_edge_cache_tags_settings row for the current MSM site_id
+    //   3. default ('none' for backend, '' for everything else)
+    //
+    // The CP settings page writes to (2); developers who prefer config-
+    // as-code keep using (1). The CP page surfaces a "locked" indicator
+    // when (1) overrides (2) so admins don't get confused by their form
+    // input not applying.
+
+    /** Lazy-load the settings row for the current site, once per request. */
+    private function settings_row(): array {
+        if (!function_exists('ee') || !isset(ee()->config)) return [];
+        $siteId = (int) ee()->config->item('site_id');
+        if (self::$cached_settings !== null && self::$cached_settings_site === $siteId) {
+            return self::$cached_settings;
+        }
+        $row = [];
+        try {
+            if (ee()->db->table_exists('edge_cache_tags_settings')) {
+                $row = ee()->db->where('site_id', $siteId)
+                    ->get('edge_cache_tags_settings')
+                    ->row_array() ?: [];
+            }
+        } catch (\Throwable $e) { /* DB may be unavailable on early boot */ }
+        self::$cached_settings = $row;
+        self::$cached_settings_site = $siteId;
+        return $row;
+    }
+
+    /** Resolve a setting key, config.php first then DB then default. */
+    private function cfg($key, $dbKey = null) {
+        $val = ee()->config->item('edge_cache_tags_' . $key);
+        if ($val !== null && $val !== '') return (string) $val;
+        $row = $this->settings_row();
+        $col = $dbKey ?: $key;
+        if (isset($row[$col]) && $row[$col] !== '') return (string) $row[$col];
+        return '';
+    }
 
     /** Resolve the currently selected backend identifier. */
     private function backend() {
-        $b = strtolower((string) ee()->config->item('edge_cache_tags_backend'));
+        $b = strtolower($this->cfg('backend'));
         if (!in_array($b, array('none', 'nivoli', 'fastly', 'cloudflare', 'webhook'), true)) {
             return 'none';
         }
         return $b;
-    }
-
-    private function cfg($key) {
-        return (string) ee()->config->item($key);
     }
 
     // ---- Header emission -------------------------------------------------
@@ -229,7 +269,7 @@ class Edge_cache_tags_ext {
 
     /** POST {tags:[...]} to <dashboard>/purge-tag. */
     private function purge_nivoli($tags) {
-        $url = $this->cfg('edge_cache_tags_nivoli_endpoint');
+        $url = $this->cfg('nivoli_endpoint');
         if (!$url) { return; }
         $url = rtrim($url, '/') . '/purge-tag';
         $this->send_post($url, json_encode(array('tags' => array_values($tags))),
@@ -242,8 +282,8 @@ class Edge_cache_tags_ext {
      * Soft purge by default — origin can revalidate stale content.
      */
     private function purge_fastly($tags) {
-        $service = $this->cfg('edge_cache_tags_fastly_service');
-        $key     = $this->cfg('edge_cache_tags_fastly_api_key');
+        $service = $this->cfg('fastly_service');
+        $key     = $this->cfg('fastly_api_key');
         if (!$service || !$key) { return; }
         $url = 'https://api.fastly.com/service/' . rawurlencode($service) . '/purge';
         $this->send_post($url, '', array(
@@ -255,8 +295,8 @@ class Edge_cache_tags_ext {
 
     /** Cloudflare Cache-Tag purge — Enterprise plan only. */
     private function purge_cloudflare($tags) {
-        $zone  = $this->cfg('edge_cache_tags_cf_zone_id');
-        $token = $this->cfg('edge_cache_tags_cf_api_token');
+        $zone  = $this->cfg('cf_zone_id');
+        $token = $this->cfg('cf_api_token');
         if (!$zone || !$token) { return; }
         $url = 'https://api.cloudflare.com/client/v4/zones/' . rawurlencode($zone) . '/purge_cache';
         $this->send_post($url, json_encode(array('tags' => array_values($tags))), array(
@@ -267,8 +307,8 @@ class Edge_cache_tags_ext {
 
     /** Generic webhook — POST {tags:[...]} to a user-supplied URL. */
     private function purge_webhook($tags) {
-        $url    = $this->cfg('edge_cache_tags_webhook_url');
-        $secret = $this->cfg('edge_cache_tags_webhook_secret');
+        $url    = $this->cfg('webhook_url');
+        $secret = $this->cfg('webhook_secret');
         if (!$url) { return; }
         $headers = array('Content-Type: application/json');
         if ($secret) { $headers[] = 'Authorization: Bearer ' . $secret; }
