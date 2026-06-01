@@ -901,7 +901,13 @@ HTML;
             $valueCell = $isSet
                 ? '<code style="background:#fef3c7;color:#78350f;padding:2px 6px;border-radius:3px">' . $h(var_export($raw, true)) . '</code>'
                 : '<span style="color:#94a3b8">(not set)</span>';
-            $typeCell = '<code style="background:#f1f5f9;color:#475569;padding:2px 6px;border-radius:3px;font-size:11.5px">' . $h($type) . '</code>';
+            // Hide the PHP-level type for unset rows — EE returns `false`
+            // (boolean) as its missing-key sentinel, which surfaced as a
+            // misleading "boolean" tag on every row. Show the type only
+            // when we actually have a stored value.
+            $typeCell = $isSet
+                ? '<code style="background:#f1f5f9;color:#475569;padding:2px 6px;border-radius:3px;font-size:11.5px">' . $h($type) . '</code>'
+                : '<span style="color:#cbd5e1">—</span>';
             $rows .= '<tr style="border-top:1px solid #f1f5f9">'
                 . '<td style="padding:8px 12px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:' . ($isSet ? '#78350f' : '#1e293b') . '">' . $h($configKey) . '</td>'
                 . '<td style="padding:8px 12px">' . $valueCell . '</td>'
