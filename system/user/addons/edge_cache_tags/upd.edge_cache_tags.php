@@ -56,7 +56,7 @@ class Edge_cache_tags_upd extends Installer
         $row = ee()->db->where('module_name', 'Edge_cache_tags')
             ->get('modules')->row_array();
         $payload = [
-            'module_version'     => '2.1.7',
+            'module_version'     => '2.2.0',
             'has_cp_backend'     => 'y',
             'has_publish_fields' => 'n',
         ];
@@ -72,6 +72,7 @@ class Edge_cache_tags_upd extends Installer
         parent::uninstall();
         ee()->load->dbforge();
         ee()->dbforge->drop_table('edge_cache_tags_settings', true);
+        ee()->dbforge->drop_table('edge_cache_tags_purge_log', true);
         // Clean up the modules row in case parent::uninstall() didn't
         // (it normally would, but we backfilled it ourselves in update()
         // so the addon claims it on the way out too).
@@ -82,28 +83,54 @@ class Edge_cache_tags_upd extends Installer
     }
 
     /**
-     * One row per site. Each EE MSM site picks its own backend +
-     * credentials. Single-site installs just use site_id=1.
+     * One row per site for settings. One row per dispatched purge in
+     * the log. Both idempotent — re-running this is safe.
      */
     private function createTables(): void
     {
         ee()->load->dbforge();
-        if (ee()->db->table_exists('edge_cache_tags_settings')) return;
 
-        ee()->dbforge->add_field([
-            'site_id'              => ['type' => 'INT',     'unsigned' => true, 'null' => false],
-            'backend'              => ['type' => 'VARCHAR', 'constraint' => 16,  'null' => false, 'default' => 'none'],
-            'nivoli_endpoint'      => ['type' => 'VARCHAR', 'constraint' => 255, 'null' => false, 'default' => ''],
-            'fastly_service'       => ['type' => 'VARCHAR', 'constraint' => 64,  'null' => false, 'default' => ''],
-            'fastly_api_key'       => ['type' => 'VARCHAR', 'constraint' => 128, 'null' => false, 'default' => ''],
-            'cf_zone_id'           => ['type' => 'VARCHAR', 'constraint' => 64,  'null' => false, 'default' => ''],
-            'cf_api_token'         => ['type' => 'VARCHAR', 'constraint' => 128, 'null' => false, 'default' => ''],
-            'webhook_url'          => ['type' => 'VARCHAR', 'constraint' => 255, 'null' => false, 'default' => ''],
-            'webhook_secret'       => ['type' => 'VARCHAR', 'constraint' => 128, 'null' => false, 'default' => ''],
-            'updated_at'           => ['type' => 'INT',     'unsigned' => true, 'null' => false, 'default' => 0],
-        ]);
-        ee()->dbforge->add_key('site_id', true);
-        ee()->dbforge->create_table('edge_cache_tags_settings', true);
+        if (!ee()->db->table_exists('edge_cache_tags_settings')) {
+            ee()->dbforge->add_field([
+                'site_id'              => ['type' => 'INT',     'unsigned' => true, 'null' => false],
+                'backend'              => ['type' => 'VARCHAR', 'constraint' => 16,  'null' => false, 'default' => 'none'],
+                'nivoli_endpoint'      => ['type' => 'VARCHAR', 'constraint' => 255, 'null' => false, 'default' => ''],
+                'fastly_service'       => ['type' => 'VARCHAR', 'constraint' => 64,  'null' => false, 'default' => ''],
+                'fastly_api_key'       => ['type' => 'VARCHAR', 'constraint' => 128, 'null' => false, 'default' => ''],
+                'cf_zone_id'           => ['type' => 'VARCHAR', 'constraint' => 64,  'null' => false, 'default' => ''],
+                'cf_api_token'         => ['type' => 'VARCHAR', 'constraint' => 128, 'null' => false, 'default' => ''],
+                'webhook_url'          => ['type' => 'VARCHAR', 'constraint' => 255, 'null' => false, 'default' => ''],
+                'webhook_secret'       => ['type' => 'VARCHAR', 'constraint' => 128, 'null' => false, 'default' => ''],
+                'updated_at'           => ['type' => 'INT',     'unsigned' => true, 'null' => false, 'default' => 0],
+            ]);
+            ee()->dbforge->add_key('site_id', true);
+            ee()->dbforge->create_table('edge_cache_tags_settings', true);
+        }
+
+        // Purge log — one row per dispatched purge. The extension writes
+        // here on every send_post() call (whatever backend). The CP page
+        // surfaces the last N rows under "Recent activity" so an admin
+        // can see purges fire in real time, plus capture status + curl
+        // errors for debugging. Auto-pruned to 500 rows per site on each
+        // insert.
+        if (!ee()->db->table_exists('edge_cache_tags_purge_log')) {
+            ee()->dbforge->add_field([
+                'id'         => ['type' => 'INT', 'unsigned' => true, 'auto_increment' => true],
+                'site_id'    => ['type' => 'INT', 'unsigned' => true, 'null' => false, 'default' => 1],
+                'created_at' => ['type' => 'INT', 'unsigned' => true, 'null' => false, 'default' => 0],
+                'backend'    => ['type' => 'VARCHAR', 'constraint' => 16,  'null' => false, 'default' => ''],
+                'tags'       => ['type' => 'TEXT',                       'null' => false],
+                'tag_count'  => ['type' => 'INT', 'unsigned' => true, 'null' => false, 'default' => 0],
+                'target_url' => ['type' => 'VARCHAR', 'constraint' => 500, 'null' => false, 'default' => ''],
+                'http_status'=> ['type' => 'INT', 'null' => false, 'default' => 0],
+                'duration_ms'=> ['type' => 'INT', 'unsigned' => true, 'null' => false, 'default' => 0],
+                'response_excerpt' => ['type' => 'VARCHAR', 'constraint' => 500, 'null' => false, 'default' => ''],
+                'error_msg'  => ['type' => 'VARCHAR', 'constraint' => 200, 'null' => false, 'default' => ''],
+            ]);
+            ee()->dbforge->add_key('id', true);
+            ee()->dbforge->add_key(['site_id', 'created_at']);
+            ee()->dbforge->create_table('edge_cache_tags_purge_log', true);
+        }
     }
 
     /**

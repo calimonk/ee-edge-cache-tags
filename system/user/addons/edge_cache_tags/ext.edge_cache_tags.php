@@ -35,7 +35,7 @@ if (!defined('BASEPATH')) { exit('No direct script access allowed'); }
 
 class Edge_cache_tags_ext {
 
-    public $version = '2.1.7';
+    public $version = '2.2.0';
 
     const MAX_KEYS    = 50;
     const MAX_KEY_LEN = 64;
@@ -273,7 +273,8 @@ class Edge_cache_tags_ext {
         if (!$url) { return; }
         $url = rtrim($url, '/') . '/purge-tag';
         $this->send_post($url, json_encode(array('tags' => array_values($tags))),
-            array('Content-Type: application/json'));
+            array('Content-Type: application/json'),
+            array('backend' => 'nivoli', 'tags' => $tags));
     }
 
     /**
@@ -290,7 +291,7 @@ class Edge_cache_tags_ext {
             'Fastly-Key: ' . $key,
             'Accept: application/json',
             'Surrogate-Key: ' . implode(' ', $tags),
-        ));
+        ), array('backend' => 'fastly', 'tags' => $tags));
     }
 
     /** Cloudflare Cache-Tag purge — Enterprise plan only. */
@@ -302,7 +303,7 @@ class Edge_cache_tags_ext {
         $this->send_post($url, json_encode(array('tags' => array_values($tags))), array(
             'Authorization: Bearer ' . $token,
             'Content-Type: application/json',
-        ));
+        ), array('backend' => 'cloudflare', 'tags' => $tags));
     }
 
     /** Generic webhook — POST {tags:[...]} to a user-supplied URL. */
@@ -312,13 +313,28 @@ class Edge_cache_tags_ext {
         if (!$url) { return; }
         $headers = array('Content-Type: application/json');
         if ($secret) { $headers[] = 'Authorization: Bearer ' . $secret; }
-        $this->send_post($url, json_encode(array('tags' => array_values($tags))), $headers);
+        $this->send_post($url, json_encode(array('tags' => array_values($tags))), $headers,
+            array('backend' => 'webhook', 'tags' => $tags));
     }
 
-    /** Fire-and-forget curl. 5s timeout. Output suppressed. */
-    private function send_post($url, $body, $headers) {
+    /**
+     * Fire curl, capture status + duration + body excerpt, log to the
+     * purge log table. 5s timeout. Errors are logged but never thrown —
+     * a slow/broken edge must not block an editor CP save.
+     *
+     * $logCtx (optional): ['backend' => string, 'tags' => array]. When
+     * present, this method writes one row to exp_edge_cache_tags_purge_log
+     * after the curl call completes.
+     */
+    private function send_post($url, $body, $headers, $logCtx = null) {
         $ch = curl_init($url);
-        if (!$ch) { return; }
+        if (!$ch) {
+            if ($logCtx) $this->log_purge($logCtx + array(
+                'url' => $url, 'http_status' => 0, 'duration_ms' => 0,
+                'response_excerpt' => '', 'error_msg' => 'curl_init failed',
+            ));
+            return;
+        }
         curl_setopt_array($ch, array(
             CURLOPT_POST           => true,
             CURLOPT_POSTFIELDS     => $body,
@@ -329,8 +345,61 @@ class Edge_cache_tags_ext {
             CURLOPT_USERAGENT      => 'edge-cache-tags-ee/' . $this->version,
             CURLOPT_FAILONERROR    => false,
         ));
-        @curl_exec($ch);
+        $started = microtime(true);
+        $response = @curl_exec($ch);
+        $duration_ms = (int) ((microtime(true) - $started) * 1000);
+        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
         curl_close($ch);
+        if ($logCtx) {
+            $this->log_purge($logCtx + array(
+                'url' => $url,
+                'http_status' => $status,
+                'duration_ms' => $duration_ms,
+                'response_excerpt' => is_string($response) ? substr($response, 0, 500) : '',
+                'error_msg' => (string) $error,
+            ));
+        }
+    }
+
+    /**
+     * Insert one row into exp_edge_cache_tags_purge_log so the CP page
+     * can show the user what just got dispatched. Auto-prunes the log to
+     * the last 500 rows per site after each insert. Errors swallowed so
+     * a logging hiccup never breaks a dispatch.
+     */
+    private function log_purge($entry) {
+        try {
+            if (!ee()->db->table_exists('edge_cache_tags_purge_log')) return;
+            $siteId = (int) ee()->config->item('site_id');
+            $tags = array_values((array) ($entry['tags'] ?? array()));
+            ee()->db->insert('edge_cache_tags_purge_log', array(
+                'site_id'    => $siteId,
+                'created_at' => time(),
+                'backend'    => substr((string) ($entry['backend'] ?? ''), 0, 16),
+                'tags'       => substr((string) json_encode($tags), 0, 65000),
+                'tag_count'  => count($tags),
+                'target_url' => substr((string) ($entry['url'] ?? ''), 0, 500),
+                'http_status'=> (int) ($entry['http_status'] ?? 0),
+                'duration_ms'=> (int) ($entry['duration_ms'] ?? 0),
+                'response_excerpt' => substr((string) ($entry['response_excerpt'] ?? ''), 0, 500),
+                'error_msg'  => substr((string) ($entry['error_msg'] ?? ''), 0, 200),
+            ));
+            // Prune. One delete per insert is fine for small data; we'd
+            // need to revisit if log volume crosses tens-of-thousands.
+            $count = (int) ee()->db->where('site_id', $siteId)->count_all_results('edge_cache_tags_purge_log');
+            if ($count > 500) {
+                $oldest = ee()->db->select('id')
+                    ->where('site_id', $siteId)
+                    ->order_by('created_at', 'asc')
+                    ->limit($count - 500)
+                    ->get('edge_cache_tags_purge_log')
+                    ->result_array();
+                $ids = array();
+                foreach ($oldest as $r) { $ids[] = (int) $r['id']; }
+                if ($ids) ee()->db->where_in('id', $ids)->delete('edge_cache_tags_purge_log');
+            }
+        } catch (\Throwable $e) { /* don't fail dispatch on log error */ }
     }
 
     // ---- helpers ---------------------------------------------------------

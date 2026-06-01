@@ -279,6 +279,7 @@ class Index extends AbstractRoute
         $backendSelect = $this->renderBackendSelect($r['backend'], isset($overrides['backend']));
         $configBlocks = $this->renderBackendConfigBlocks($r, $overrides, $effBackend);
         $diagBlock = $this->renderDiagBlock($diag);
+        $activityBlock = $this->renderActivityBlock($siteId);
         $docsBlock = $this->renderDocsBlock();
 
         return <<<HTML
@@ -357,6 +358,7 @@ class Index extends AbstractRoute
 </form>
 
 {$diagBlock}
+{$activityBlock}
 {$docsBlock}
 
 </div>
@@ -603,6 +605,118 @@ HTML;
             . '<h3 style="margin:18px 0 4px;font-size:14px">Sample tags this site would emit</h3>'
             . '<p class="sub" style="margin:0 0 6px">Keys are space-separated in the <code>Surrogate-Key</code> header and comma-separated in <code>Cache-Tag</code>.</p>'
             . '<div class="ect-sample">' . $sampleRows . '</div>'
+            . '</div>';
+    }
+
+    /**
+     * Recent purge activity from exp_edge_cache_tags_purge_log. One row
+     * per dispatched purge with status icon, backend, tag count,
+     * relative timestamp, and optional click-through for failed calls.
+     * Hidden gracefully if the table doesn't exist yet (pre-v2.2 install
+     * that hasn't run update() yet).
+     */
+    private function renderActivityBlock(int $siteId): string
+    {
+        if (!ee()->db->table_exists('edge_cache_tags_purge_log')) {
+            return '';
+        }
+        $rows = ee()->db->where('site_id', $siteId)
+            ->order_by('created_at', 'desc')
+            ->limit(50)
+            ->get('edge_cache_tags_purge_log')
+            ->result_array();
+
+        $h = fn($v) => htmlspecialchars((string) $v);
+        $relTime = function (int $ts): string {
+            $delta = time() - $ts;
+            if ($delta < 60)    return $delta . 's ago';
+            if ($delta < 3600)  return floor($delta / 60) . 'm ago';
+            if ($delta < 86400) return floor($delta / 3600) . 'h ago';
+            return floor($delta / 86400) . 'd ago';
+        };
+
+        if (empty($rows)) {
+            return '<div class="ect-card">'
+                . '<h2 style="margin:0 0 8px">Recent activity</h2>'
+                . '<p style="margin:0;color:#64748b;font-size:13px">No purges dispatched yet. '
+                . 'Edit and save a channel entry to fire one — it\'ll appear here on the next page load.</p>'
+                . '</div>';
+        }
+
+        $rowsHtml = '';
+        foreach ($rows as $r) {
+            $status = (int) $r['http_status'];
+            $err = (string) ($r['error_msg'] ?? '');
+            $isOk   = ($status >= 200 && $status < 300);
+            $isWarn = (!$isOk && $status > 0); // 4xx/5xx — got a response, but bad
+            $isErr  = ($status === 0 || $err !== ''); // network error / no response
+            if ($isErr) {
+                $icon  = '<span style="color:#ef4444;font-weight:700">!</span>';
+                $iconBg = '#fee2e2';
+                $statusLabel = $err !== ''
+                    ? '<span style="color:#b91c1c">' . $h($err) . '</span>'
+                    : '<span style="color:#b91c1c">no response</span>';
+            } elseif ($isWarn) {
+                $icon  = '<span style="color:#b45309;font-weight:700">⚠</span>';
+                $iconBg = '#fef3c7';
+                $statusLabel = '<span style="color:#b45309">HTTP ' . $status . '</span>';
+            } else {
+                $icon  = '<span style="color:#15803d;font-weight:700">✓</span>';
+                $iconBg = '#d1fae5';
+                $statusLabel = '<span style="color:#15803d">HTTP ' . $status . '</span>';
+            }
+
+            $tagsArr = json_decode((string) $r['tags'], true);
+            if (!is_array($tagsArr)) $tagsArr = array();
+            $tagPreview = '';
+            $shown = array_slice($tagsArr, 0, 4);
+            foreach ($shown as $t) {
+                $tagPreview .= '<code style="background:#f1f5f9;padding:1px 6px;border-radius:3px;font-size:11.5px;color:#334155;margin-right:3px">' . $h($t) . '</code>';
+            }
+            if (count($tagsArr) > 4) {
+                $tagPreview .= '<span style="color:#94a3b8;font-size:11.5px">+' . (count($tagsArr) - 4) . ' more</span>';
+            }
+
+            $hostFromUrl = parse_url((string) $r['target_url'], PHP_URL_HOST) ?: '(unknown)';
+            $backend = $h(strtoupper((string) $r['backend']));
+            $backendChip = '<span style="display:inline-block;padding:2px 7px;background:#e0e7ff;color:#4338ca;font-size:11px;font-weight:600;border-radius:3px;letter-spacing:0.04em">' . $backend . '</span>';
+
+            $detail = '';
+            if ($isErr || $isWarn) {
+                $excerpt = (string) ($r['response_excerpt'] ?? '');
+                if ($excerpt !== '') {
+                    $detail = '<div style="grid-column:2 / -1;margin-top:6px;padding:8px 10px;background:#0f172a;color:#fca5a5;border-radius:5px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word;max-height:120px;overflow:auto">' . $h(substr($excerpt, 0, 500)) . '</div>';
+                }
+            }
+
+            $rowsHtml .= '<div style="display:grid;grid-template-columns:32px 1fr auto;gap:10px;padding:10px 0;border-bottom:1px solid #f1f5f9;align-items:center">'
+                . '<div style="width:28px;height:28px;border-radius:50%;background:' . $iconBg . ';display:flex;align-items:center;justify-content:center">' . $icon . '</div>'
+                . '<div style="font-size:13px;line-height:1.5">'
+                .   '<div style="margin-bottom:3px">' . $backendChip
+                .       ' <span style="color:#475569">' . (int) $r['tag_count'] . ' tag' . ($r['tag_count'] == 1 ? '' : 's') . '</span>'
+                .       ' <span style="color:#94a3b8;margin:0 6px">·</span>'
+                .       ' ' . $statusLabel
+                .       ' <span style="color:#94a3b8;margin:0 6px">·</span>'
+                .       ' <span style="color:#64748b;font-size:12px">' . (int) $r['duration_ms'] . 'ms</span>'
+                .   '</div>'
+                .   '<div>' . $tagPreview . '</div>'
+                . '</div>'
+                . '<div style="text-align:right;font-size:12px;color:#94a3b8;white-space:nowrap" title="' . $h(date('Y-m-d H:i:s', (int) $r['created_at'])) . '">'
+                .   $h($relTime((int) $r['created_at']))
+                .   '<div style="font-size:11px;margin-top:2px">' . $h($hostFromUrl) . '</div>'
+                . '</div>'
+                . $detail
+                . '</div>';
+        }
+
+        $total = count($rows);
+        return '<div class="ect-card">'
+            . '<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:6px">'
+            .   '<h2 style="margin:0">Recent activity</h2>'
+            .   '<span style="font-size:12px;color:#64748b">last ' . $total . ' purge' . ($total == 1 ? '' : 's') . ' for this site</span>'
+            . '</div>'
+            . '<p style="margin:0 0 14px;color:#64748b;font-size:13px">Every purge dispatched by this addon. Use it to confirm saves are firing, debug a misconfigured backend, or see what your edge is being told to evict.</p>'
+            . $rowsHtml
             . '</div>';
     }
 
