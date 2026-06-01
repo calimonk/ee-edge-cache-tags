@@ -242,6 +242,39 @@ $k = call_private($ext, 'keys_for_entry', array($entry, array()));
 assertContains_('site-5-entry-100',     $k, 'prefixed entry-100');
 assertContains_('site-5-channel-blog',  $k, 'prefixed channel-blog');
 assertContains_('site-5-home',          $k, 'prefixed home');
+// Importantly: an MSM save on site 5 must NOT carry the unprefixed
+// network-wide 'all' tag — that would cross-purge sites 1, 2, 3, 4 too.
+// keys_for_REQUEST does emit unprefixed 'all' so an admin CAN do a
+// network-wide nuke; keys_for_ENTRY (the auto-purge on save) intentionally
+// does not, to keep MSM sites isolated under normal operation.
+assertNotContains_('all',         $k, 'MSM site-5 save does NOT purge unprefixed `all` (no cross-site nuke)');
+assertNotContains_('entry-100',   $k, 'MSM site-5 save does NOT purge unprefixed entry-100 (would leak)');
+assertNotContains_('channel-blog', $k, 'MSM site-5 save does NOT purge unprefixed channel-blog');
+
+echo "\nDefault site (site_id=1): keys NOT prefixed\n";
+reset_ee();
+ee()->config->items['site_id'] = 1;  // explicit default
+$ext = new Edge_cache_tags_ext();
+$entry = (object) array(
+    'entry_id'   => 7,
+    'Channel'    => (object) array('channel_name' => 'news'),
+    'Categories' => array((object) array('cat_id' => 4)),
+);
+$k = call_private($ext, 'keys_for_entry', array($entry, array()));
+assertContains_('entry-7',      $k, 'unprefixed on default site');
+assertContains_('channel-news', $k, 'unprefixed channel-news on default site');
+assertContains_('category-4',   $k, 'unprefixed category-4 on default site');
+assertNotContains_('site-1-entry-7', $k, 'no site-1- prefix on default site');
+
+echo "\nDefault site (site_id=1) keys_for_request: unprefixed too\n";
+reset_ee();
+ee()->config->items['site_id'] = 1;
+ee()->uri->uri = 'news/some-article';
+$ext = new Edge_cache_tags_ext();
+$k = call_private($ext, 'keys_for_request');
+assertContains_('path-news', $k, 'path-news (unprefixed)');
+assertContains_('all',       $k, 'all (unprefixed)');
+assertNotContains_('site-1-path-news', $k, 'no site-1- prefix on default site');
 
 // ---------------------------------------------------------------------------
 // Section 3 — clean() sanitization

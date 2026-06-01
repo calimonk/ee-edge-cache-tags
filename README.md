@@ -117,6 +117,38 @@ Multiple saves in the same request coalesce into one POST. EE's
 `register_shutdown_function` fires the dispatch after the CP response
 is sent.
 
+## Multi-Site Manager (MSM)
+
+The add-on is MSM-aware:
+
+**On the default site (`site_id=1`):** keys are emitted and purged
+unprefixed (`home`, `entry-123`, `channel-news`, …). Works the same as
+on a single-site install.
+
+**On secondary sites (`site_id > 1`):** keys are prefixed with
+`site-<id>-` for cross-site isolation:
+
+- A page on site 2 emits `site-2-home site-2-entry-123 … site-2-all`
+  **plus** an unprefixed `all` (so an admin can still do a network-wide
+  nuke by purging the `all` tag).
+- A save on site 2 purges only `site-2-*` tags — it does **not** touch
+  the unprefixed `all`. Saving a news article on site 2 doesn't blow
+  away site 1's cache.
+
+This means one EE install with N sites uses **one purge backend** (one
+Fastly service / one Cloudflare zone / one Nivoli token) — the prefixing
+keeps the tag namespaces separate.
+
+**For the Nivoli backend on MSM:** each MSM hostname is a separate
+Nivoli tenant by default, each with its own token. To share a single
+endpoint across MSM sites, ask Nivoli support to link your tokens — one
+dashboard URL then accepts purges for all linked hostnames, and the
+`site-<id>-` prefixing routes them to the right hostname automatically.
+
+**For Fastly / Cloudflare / webhook backends on MSM:** no extra setup
+needed — one service / zone / endpoint serves all MSM sites; tag
+prefixing keeps them apart.
+
 ## Filters / extension points
 
 The extension doesn't expose its own EE hooks; logic is straight-line
