@@ -35,7 +35,7 @@ if (!defined('BASEPATH')) { exit('No direct script access allowed'); }
 
 class Edge_cache_tags_ext {
 
-    public $version = '2.4.6';
+    public $version = '2.4.7';
 
     const MAX_KEYS    = 50;
     const MAX_KEY_LEN = 64;
@@ -133,7 +133,23 @@ class Edge_cache_tags_ext {
         if (ee()->extensions->last_call !== false) {
             $final_template = ee()->extensions->last_call;
         }
+
+        // Trace mode — activated with ?ect_trace=1 (or X-Edge-Cache-Tags-Trace
+        // request header). Injects an HTML comment into the body recording
+        // EVERY decision the hook makes for this request, including any
+        // early-bail reason. Lets an operator see whether the hook fired,
+        // what is_partial / REQUEST_METHOD looked like, and whether keys
+        // were produced. Costs nothing in the no-trace path.
+        $trace = $this->isTraceRequested();
+        $traceBag = $trace ? array(
+            'is_partial' => $is_partial ? 'true' : 'false',
+            'site_id' => (int) $site_id,
+            'method' => isset($_SERVER['REQUEST_METHOD']) ? strtoupper((string) $_SERVER['REQUEST_METHOD']) : 'unknown',
+            'req_const' => defined('REQ') ? REQ : '(undefined)',
+        ) : null;
+
         if ($is_partial) {
+            if ($trace) { return $this->traceComment($final_template, $traceBag, 'bail:is_partial'); }
             return $final_template;
         }
         // GET and HEAD both get headers. RFC 7231: HEAD responses must
@@ -141,8 +157,14 @@ class Edge_cache_tags_ext {
         // `curl -I` (which uses HEAD) skips the addon entirely, leaving
         // admins to think their install is broken.
         $method = isset($_SERVER['REQUEST_METHOD']) ? strtoupper((string) $_SERVER['REQUEST_METHOD']) : 'GET';
-        if ($method !== 'GET' && $method !== 'HEAD') { return $final_template; }
-        if (defined('REQ') && REQ === 'CP') { return $final_template; }
+        if ($method !== 'GET' && $method !== 'HEAD') {
+            if ($trace) { return $this->traceComment($final_template, $traceBag, 'bail:method=' . $method); }
+            return $final_template;
+        }
+        if (defined('REQ') && REQ === 'CP') {
+            if ($trace) { return $this->traceComment($final_template, $traceBag, 'bail:cp_request'); }
+            return $final_template;
+        }
 
         $keys = $this->keys_for_request();
         if (!empty($keys)) {
@@ -152,8 +174,48 @@ class Edge_cache_tags_ext {
             // in the path and the other isn't.
             ee()->output->set_header('Surrogate-Key: ' . implode(' ', $keys));
             ee()->output->set_header('Cache-Tag: ' . implode(',', $keys));
+            // Belt-and-suspenders for environments where Output->set_header()
+            // doesn't reach the client (some setups serve cached output via
+            // a path that bypasses Output::_display). Direct header() call
+            // hits PHP-FPM's response unconditionally. Only emitted in trace
+            // mode — if these show up in trace but set_header()'s don't, we
+            // have isolated the bug to the EE Output buffer.
+            if ($trace) {
+                @header('X-Edge-Cache-Tags-Direct: ran keys=' . count($keys));
+            }
+        }
+        if ($trace) {
+            $traceBag['keys'] = count($keys);
+            $traceBag['sample'] = implode(',', array_slice($keys, 0, 5)) . (count($keys) > 5 ? ',…' : '');
+            @header('X-Edge-Cache-Tags-Trace: ' . $this->encodeTrace($traceBag));
+            return $this->traceComment($final_template, $traceBag, $keys ? 'emitted' : 'no_keys');
         }
         return $final_template;
+    }
+
+    private function isTraceRequested() {
+        if (isset($_GET['ect_trace']) && $_GET['ect_trace'] !== '') return true;
+        if (!empty($_SERVER['HTTP_X_EDGE_CACHE_TAGS_TRACE'])) return true;
+        return false;
+    }
+
+    private function encodeTrace(array $bag) {
+        $parts = array();
+        foreach ($bag as $k => $v) {
+            $v = (string) $v;
+            $v = preg_replace('/[\r\n\0]+/', '_', $v);
+            $parts[] = $k . '=' . $v;
+        }
+        return substr(implode(' ', $parts), 0, 500);
+    }
+
+    private function traceComment($body, array $bag, $outcome) {
+        $bag['outcome'] = $outcome;
+        $bag['version'] = $this->version;
+        $line = "\n<!-- ECT trace: " . $this->encodeTrace($bag) . " -->\n";
+        // Append at end — safe regardless of body shape. Some setups
+        // truncate at </html> so prepend a copy at the start too.
+        return $line . $body . $line;
     }
 
     /**
