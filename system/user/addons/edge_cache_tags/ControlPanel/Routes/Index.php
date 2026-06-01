@@ -392,6 +392,36 @@ class Index extends AbstractRoute
         // which made the lock indicator look wrong / confusing.
         $backendShown = isset($overrides['backend']) ? (string) $overrides['backend'] : (string) $r['backend'];
         $backendSelect = $this->renderBackendSelect($backendShown, isset($overrides['backend']));
+
+        // Live stats hero (Nivoli only). Hoisted out of the cfgPanel
+        // body so it stays visible when the configuration form below is
+        // collapsed. One outbound fetch per CP request, memoized in
+        // fetchNivoliStats(). Fails silently if endpoint unreachable.
+        $statsHero = '';
+        if ($effBackend === 'nivoli') {
+            $effEndpoint = $overrides['nivoli_endpoint'] ?? ($r['nivoli_endpoint'] ?? '');
+            if ($effEndpoint !== '') {
+                $stats = $this->fetchNivoliStats($effEndpoint);
+                if ($stats) $statsHero = $this->renderNivoliStatsWidget($stats);
+            }
+        }
+
+        // Whether to show the configuration form expanded by default.
+        // Open when: no backend chosen yet (initial setup), credentials
+        // missing (need attention), or a save just happened (echo what
+        // they just saved). Otherwise collapsed — once it's working, you
+        // rarely revisit the form.
+        $credIssue = false;
+        foreach (($diag['checks'] ?? []) as $check) {
+            if (!($check['ok'] ?? true) && ($check['label'] ?? '') === 'Backend credentials') {
+                $credIssue = true; break;
+            }
+        }
+        $configOpen = ($effBackend === 'none') || $credIssue || ($msg !== null);
+        $configOpenAttr = $configOpen ? ' open' : '';
+        $configSummaryLabel = $effBackend === 'none'
+            ? 'Configure a backend'
+            : 'Backend: ' . ucfirst($effBackend) . ' · click to edit';
         $configBlocks = $this->renderBackendConfigBlocks($r, $overrides, $effBackend);
         $diagBlock = $this->renderDiagBlock($diag);
         $configProbeBlock = $this->renderConfigProbe();
@@ -482,6 +512,23 @@ class Index extends AbstractRoute
 .ect-tab.active .ect-tab-badge { background:#dbeafe; color:#1d4ed8; }
 .ect-tab-panel { display:none; }
 .ect-tab-panel.active { display:block; }
+
+/* Collapsed configuration block. Used on the Setup tab so the stats
+   hero + Quick actions stay top-of-page once the backend is wired up
+   and rarely-edited. Native <details>/<summary> for zero JS. */
+.ect-config-details { margin-bottom:14px; }
+.ect-config-summary { list-style:none; cursor:pointer; padding:13px 18px; background:white; border:1px solid #e2e8f0; border-radius:8px; display:flex; align-items:center; gap:10px; font-weight:600; color:#1e293b; font-size:13.5px; transition:border-color 0.15s; }
+.ect-config-summary::-webkit-details-marker { display:none; }
+.ect-config-summary:hover { border-color:#cbd5e1; }
+.ect-config-details[open] .ect-config-summary { border-color:#1d4ed8; border-bottom-left-radius:0; border-bottom-right-radius:0; }
+.ect-config-summary-icon { font-size:15px; opacity:0.65; }
+.ect-config-summary-label { flex:1; }
+.ect-config-summary-hint { font-size:11.5px; font-weight:500; color:#94a3b8; text-transform:uppercase; letter-spacing:0.05em; }
+.ect-config-details[open] .ect-config-summary-hint::after { content:""; }
+.ect-config-details:not([open]) .ect-config-summary-hint::before { content:"▾ "; }
+.ect-config-details[open] .ect-config-summary-hint::before { content:"▴ "; }
+.ect-config-details[open] .ect-config-summary .ect-config-summary-hint { content:"collapse"; }
+.ect-config-details[open] .ect-card { border-top-left-radius:0; border-top-right-radius:0; border-top:0; margin-top:0 !important; }
 </style>
 
 <div class="ect">
@@ -502,23 +549,32 @@ class Index extends AbstractRoute
 </nav>
 
 <section class="ect-tab-panel active" data-panel="setup">
-  <form method="POST" action="{$action}">
-  <div class="ect-card">
-    <div class="ect-row">
-      <label class="ect-lbl">Edge cache</label>
-      <div class="ect-field">
-        {$backendSelect}
-        <div class="help">Which cache should receive the purge calls when entries change. Headers emit regardless — the cache reads them either way; this just picks who gets pinged about updates.</div>
-      </div>
-    </div>
-
-    {$configBlocks}
-
-    <div class="ect-save"><button type="submit" class="ect-btn">Save settings</button></div>
-  </div>
-  </form>
+  {$statsHero}
 
   {$toolsBlock}
+
+  <details class="ect-config-details"{$configOpenAttr}>
+    <summary class="ect-config-summary">
+      <span class="ect-config-summary-icon">⚙</span>
+      <span class="ect-config-summary-label">{$configSummaryLabel}</span>
+      <span class="ect-config-summary-hint">expand</span>
+    </summary>
+    <form method="POST" action="{$action}">
+    <div class="ect-card" style="margin-top:10px">
+      <div class="ect-row">
+        <label class="ect-lbl">Edge cache</label>
+        <div class="ect-field">
+          {$backendSelect}
+          <div class="help">Which cache should receive the purge calls when entries change. Headers emit regardless — the cache reads them either way; this just picks who gets pinged about updates.</div>
+        </div>
+      </div>
+
+      {$configBlocks}
+
+      <div class="ect-save"><button type="submit" class="ect-btn">Save settings</button></div>
+    </div>
+    </form>
+  </details>
 </section>
 
 <section class="ect-tab-panel" data-panel="status">
@@ -727,20 +783,11 @@ HTML;
                       . '</div>';
                 break;
             case 'nivoli':
-                // Real stats widget — pulled live from the Nivoli endpoint
-                // when it's set + reachable. One curl per CP page load,
-                // memoized within the request. Fails silently if the
-                // endpoint isn't accessible (network blip, wrong URL, etc.)
-                $statsWidget = '';
-                $effEndpoint = $overrides['nivoli_endpoint'] ?? ($r['nivoli_endpoint'] ?? '');
-                if ($effEndpoint) {
-                    $stats = $this->fetchNivoliStats($effEndpoint);
-                    if ($stats) {
-                        $statsWidget = $this->renderNivoliStatsWidget($stats);
-                    }
-                }
-                $body = $statsWidget
-                      . '<p style="margin:0 0 14px;color:#334155;font-size:13.5px;line-height:1.55">'
+                // Description + URL field. The live stats widget that used
+                // to sit at the top of this body got hoisted to render() so
+                // it appears OUTSIDE the (now-collapsed-by-default) settings
+                // form. See $statsHero in render().
+                $body = '<p style="margin:0 0 14px;color:#334155;font-size:13.5px;line-height:1.55">'
                       . 'Managed full-page caching on Cloudflare with a 404 dashboard, attack blackholing, '
                       . 'and tag purge baked in. Paste the dashboard URL from your Nivoli account — every '
                       . 'entry save will POST the affected tags to <code>&lt;url&gt;/purge-tag</code> and the '
