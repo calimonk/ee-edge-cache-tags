@@ -328,17 +328,21 @@ class Index extends AbstractRoute
 <div class="ect">
 
 <h2>Edge Cache Tags · site #{$siteId}</h2>
-<p class="sub">Emits <code>Surrogate-Key</code> + <code>Cache-Tag</code> headers on every front-end GET, then dispatches tag-based purges to the configured backend when channel entries are saved or deleted.</p>
+<p class="sub" style="font-size:14px;line-height:1.6;color:#334155;max-width:760px">
+  <strong style="color:#0f172a">Surgical cache invalidation for ExpressionEngine.</strong>
+  Every page gets tagged with what it actually contains — the entry ID, channel name, category IDs, template group. When an editor publishes an entry, only the pages featuring it (the entry page, the homepage, its channel index, its category archives) get cleared from your edge cache. Not the whole site.
+  <span style="color:#64748b">Works with Fastly, Cloudflare Enterprise, Nivoli, or your own edge via webhook.</span>
+</p>
 
 {$alert}
 
 <form method="POST" action="{$action}">
 <div class="ect-card">
   <div class="ect-row">
-    <label class="ect-lbl">Backend</label>
+    <label class="ect-lbl">Edge cache</label>
     <div class="ect-field">
       {$backendSelect}
-      <div class="help">Pick where to dispatch purges. Headers always emit regardless of backend. Field below changes to match.</div>
+      <div class="help">Which cache should receive the purge calls when entries change. Headers emit regardless — the cache reads them either way; this just picks who gets pinged about updates.</div>
     </div>
   </div>
 
@@ -409,36 +413,81 @@ HTML;
         $body = '';
         switch ($kind) {
             case 'none':
-                $body = '<p style="margin:0;color:#475569;font-size:13px">Pages still emit <code>Surrogate-Key</code> + <code>Cache-Tag</code> headers. Your cache infrastructure handles purges externally.</p>'
-                      . '<p style="margin:10px 0 0;color:#475569;font-size:13px">'
-                      . '<strong>Don\'t have a managed edge cache yet?</strong> '
-                      . '<a href="https://console.nivoli.com/signup" target="_blank" rel="noopener">Sign up for Nivoli</a> — free for 1 domain up to 100k requests/month, plug-and-play with this addon.</p>';
+                // The "headers-only" mode is also the upsell surface — most
+                // people see this panel first (it's the default). The
+                // Nivoli pitch goes here, not buried under the dropdown.
+                $body = '<p style="margin:0 0 14px;color:#334155;font-size:14px;line-height:1.6">'
+                      . 'Pages keep emitting <code>Surrogate-Key</code> + <code>Cache-Tag</code> headers — '
+                      . 'your edge cache reads them. The addon just doesn\'t fire purges; whatever wires up '
+                      . 'your cache handles invalidation. Good fit for Varnish/VCL setups, evaluators kicking '
+                      . 'the tires, or "headers first, purges later" rollouts.</p>'
+
+                      . '<div style="background:linear-gradient(135deg,#1d4ed8 0%,#0e7490 100%);color:white;padding:22px 24px;border-radius:8px;margin-top:18px">'
+                      . '<div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;opacity:0.85;margin-bottom:6px">No cache yet?</div>'
+                      . '<h3 style="margin:0 0 8px;color:white;font-size:18px;font-weight:600">Get full-page caching on Cloudflare\'s network, managed.</h3>'
+                      . '<p style="margin:0 0 12px;font-size:13.5px;line-height:1.6;opacity:0.95">'
+                      . '<strong>Nivoli</strong> is a turn-key edge cache with the operational features Fastly and CF Enterprise make you build yourself: '
+                      . '<strong>404 dashboard with smart redirects</strong>, <strong>attack-pattern blackholing</strong>, '
+                      . '<strong>broken-deploy alerts</strong>, and tag-based purge that\'s <strong>pre-wired with this addon</strong>. '
+                      . 'Paste your dashboard URL once and ship.</p>'
+                      . '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12.5px;margin-bottom:14px;opacity:0.92">'
+                      . '<span style="background:rgba(255,255,255,0.18);padding:3px 9px;border-radius:11px">✓ Free tier: 1 domain, ~100k req/mo</span>'
+                      . '<span style="background:rgba(255,255,255,0.18);padding:3px 9px;border-radius:11px">✓ 90-second onboarding</span>'
+                      . '<span style="background:rgba(255,255,255,0.18);padding:3px 9px;border-radius:11px">✓ Runs on Cloudflare</span>'
+                      . '</div>'
+                      . '<a href="https://console.nivoli.com/signup" target="_blank" rel="noopener" '
+                      . 'style="display:inline-block;background:white;color:#1d4ed8 !important;padding:10px 22px;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px">'
+                      . 'Sign up at console.nivoli.com →</a>'
+                      . '</div>';
                 break;
             case 'nivoli':
-                $body = $this->field('nivoli_endpoint', 'Dashboard URL', 'url',
-                    'https://console.nivoli.com/cache/&lt;token&gt;', $r, $overrides,
-                    'The token in the URL is the auth. Don\'t have one? <a href="https://console.nivoli.com/signup" target="_blank" rel="noopener">Sign up free</a>.');
+                $body = '<p style="margin:0 0 14px;color:#334155;font-size:13.5px;line-height:1.55">'
+                      . 'Managed full-page caching on Cloudflare with a 404 dashboard, attack blackholing, '
+                      . 'and tag purge baked in. Paste the dashboard URL from your Nivoli account — every '
+                      . 'entry save will POST the affected tags to <code>&lt;url&gt;/purge-tag</code> and the '
+                      . 'edge clears just those pages.</p>'
+                      . $this->field('nivoli_endpoint', 'Dashboard URL', 'url',
+                            'https://console.nivoli.com/cache/&lt;token&gt;', $r, $overrides,
+                            'The token in the URL is the auth — treat it like a secret. Don\'t have an account yet? <a href="https://console.nivoli.com/signup" target="_blank" rel="noopener">Sign up free</a> (1 domain, ~100k req/mo on the free tier).');
                 break;
             case 'fastly':
-                $body = $this->field('fastly_service', 'Service ID', 'text', '', $r, $overrides, 'The Fastly service to purge against.')
+                $body = '<p style="margin:0 0 14px;color:#334155;font-size:13.5px;line-height:1.55">'
+                      . 'Fastly\'s <code>Surrogate-Key</code> purge — the gold standard for tag-based '
+                      . 'cache invalidation. Every entry save POSTs to '
+                      . '<code>/service/&lt;id&gt;/purge</code> with the touched keys in the header. '
+                      . 'Soft purge by default, so origin gets a chance to revalidate stale content.</p>'
+                      . $this->field('fastly_service', 'Service ID', 'text', '', $r, $overrides,
+                            'The Fastly service that serves this site.')
                       . $this->field('fastly_api_key', 'API token', 'password', '', $r, $overrides,
-                            'Needs the <code>purge_select</code> permission.');
+                            'Needs the <code>purge_select</code> permission. Generate at <a href="https://manage.fastly.com/account/personal/tokens" target="_blank" rel="noopener">manage.fastly.com</a>.');
                 break;
             case 'cloudflare':
-                $body = '<p style="margin:0 0 12px;color:#78350f;background:#fef3c7;padding:8px 12px;border-radius:5px;font-size:12.5px">⚠ Cache-Tag purge is a Cloudflare <strong>Enterprise</strong>-plan feature.</p>'
-                      . $this->field('cf_zone_id',   'Zone ID',   'text',     '', $r, $overrides, '')
+                $body = '<div style="background:#fef3c7;color:#78350f;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:13px;line-height:1.5">'
+                      . '⚠ <strong>Cloudflare Enterprise plan required.</strong> <code>Cache-Tag</code>-based purge isn\'t available on Free, Pro, or Business plans. If you\'re not on Enterprise, look at Nivoli or Fastly above.'
+                      . '</div>'
+                      . '<p style="margin:0 0 14px;color:#334155;font-size:13.5px;line-height:1.55">'
+                      . 'Cloudflare\'s native <code>Cache-Tag</code> purge — fastest path if you\'re already paying for Enterprise. '
+                      . 'Entry saves POST to <code>/zones/&lt;id&gt;/purge_cache</code> with all affected tags in one call.</p>'
+                      . $this->field('cf_zone_id',   'Zone ID',   'text',     '', $r, $overrides,
+                            'Find it on the Cloudflare dashboard\'s zone Overview page, right sidebar.')
                       . $this->field('cf_api_token', 'API token', 'password', '', $r, $overrides,
-                            'Scoped to <code>Zone -> Cache Purge -> Purge</code>.');
+                            'Scoped to <code>Zone → Cache Purge → Purge</code>. Generate at <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">dash.cloudflare.com/profile/api-tokens</a>.');
                 break;
             case 'webhook':
-                $body = $this->field('webhook_url',    'Webhook URL',  'url',      'https://your-edge.example.com/purge', $r, $overrides,
-                            'Receives <code>POST</code> with <code>{"tags":[…]}</code> JSON.')
+                $body = '<p style="margin:0 0 14px;color:#334155;font-size:13.5px;line-height:1.55">'
+                      . 'Bring your own edge. Every entry save POSTs <code>{"tags":[…]}</code> to '
+                      . 'your URL — wire it up to a Varnish purge script, a Squid handler, your own '
+                      . 'CDN\'s API, or anything else that speaks HTTP. Fire-and-forget with a 5s '
+                      . 'timeout, so a slow endpoint never blocks a CP save.</p>'
+                      . $this->field('webhook_url', 'Webhook URL', 'url',
+                            'https://your-edge.example.com/purge', $r, $overrides,
+                            'Receives an HTTP POST with <code>{"tags":[…]}</code> JSON body.')
                       . $this->field('webhook_secret', 'Bearer secret', 'password', '', $r, $overrides,
-                            'Optional. When set, sent as <code>Authorization: Bearer …</code>.');
+                            'Optional. When set, sent as <code>Authorization: Bearer …</code> — use it to authenticate the addon\'s POSTs to your endpoint.');
                 break;
         }
         return '<div id="cfg-' . $kind . '" class="' . $cls . '">'
-            . '<h3 style="margin:14px 0 6px;font-size:14px">' . htmlspecialchars($title) . '</h3>'
+            . '<h3 style="margin:14px 0 8px;font-size:14px;color:#0f172a">' . htmlspecialchars($title) . '</h3>'
             . $body
             . '</div>';
     }
