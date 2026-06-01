@@ -35,7 +35,7 @@ if (!defined('BASEPATH')) { exit('No direct script access allowed'); }
 
 class Edge_cache_tags_ext {
 
-    public $version = '2.2.1';
+    public $version = '2.3.0';
 
     const MAX_KEYS    = 50;
     const MAX_KEY_LEN = 64;
@@ -233,6 +233,39 @@ class Edge_cache_tags_ext {
             }
         }
         return $this->clean($keys);
+    }
+
+    // ---- Public API for manual purge from the CP -------------------------
+
+    /**
+     * Manually dispatch a purge for a caller-supplied tag list. Used by
+     * the CP "Quick actions" panel so an admin can refresh specific
+     * pages without saving a channel entry. Bypasses the coalesced
+     * flush queue — runs synchronously, returns success info that the
+     * caller can show in the UI immediately.
+     *
+     * Returns: ['ok' => bool, 'backend' => string, 'tags' => array,
+     *          'dispatched' => int (chunks sent), 'error' => string|null].
+     */
+    public function manual_purge_tags(array $tags): array {
+        $tags = $this->clean($tags);
+        if (empty($tags)) {
+            return ['ok' => false, 'backend' => 'none', 'tags' => [],
+                'dispatched' => 0, 'error' => 'No valid tags to purge.'];
+        }
+        $backend = $this->backend();
+        if ($backend === 'none') {
+            return ['ok' => false, 'backend' => 'none', 'tags' => $tags,
+                'dispatched' => 0,
+                'error' => "Backend is 'none' — nowhere to dispatch. Pick a backend first."];
+        }
+        $chunks = 0;
+        foreach (array_chunk($tags, self::MAX_KEYS) as $chunk) {
+            $this->dispatch_purge($backend, $chunk);
+            $chunks++;
+        }
+        return ['ok' => true, 'backend' => $backend, 'tags' => $tags,
+            'dispatched' => $chunks, 'error' => null];
     }
 
     // ---- Coalesced flush --------------------------------------------------

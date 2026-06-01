@@ -42,9 +42,17 @@ class Index extends AbstractRoute
         $msg = null;
         $action = ee('CP/URL')->make('addons/settings/edge_cache_tags/index')->compile();
 
+        // Two POST shapes share this route: settings save (default) and
+        // manual tag purge (action=purge_tags). Distinguish via hidden
+        // form field so we know which handler to run.
         if (ee('Request')->method() === 'POST') {
-            $this->save($siteId);
-            $msg = 'Settings saved.';
+            $postAction = (string) ee()->input->post('ect_action');
+            if ($postAction === 'purge_tags') {
+                $msg = $this->handleManualPurge();
+            } else {
+                $this->save($siteId);
+                $msg = 'Settings saved.';
+            }
         }
 
         $row = $this->loadSettings($siteId);
@@ -53,6 +61,33 @@ class Index extends AbstractRoute
 
         $this->setBody($this->render($siteId, $row, $configOverrides, $action, $msg, $diag));
         return $this;
+    }
+
+    /**
+     * Run a manual tag purge against whatever backend is configured.
+     * Tags are space- or comma-separated in the form field. Returns a
+     * message string to surface above the settings card.
+     */
+    private function handleManualPurge(): string
+    {
+        $raw = (string) ee()->input->post('purge_tags_input');
+        $tags = preg_split('/[\s,]+/', trim($raw)) ?: [];
+        $tags = array_values(array_filter($tags, function ($t) { return $t !== ''; }));
+        if (empty($tags)) {
+            return 'Enter at least one tag to purge.';
+        }
+        // Instantiate the extension and ask it to dispatch.
+        if (!class_exists('Edge_cache_tags_ext')) {
+            require_once SYSPATH . 'user/addons/edge_cache_tags/ext.edge_cache_tags.php';
+        }
+        $ext = new \Edge_cache_tags_ext();
+        $res = $ext->manual_purge_tags($tags);
+        if (!$res['ok']) {
+            return 'Purge failed: ' . $res['error'];
+        }
+        return 'Purge dispatched: ' . implode(', ', $res['tags']) .
+            ' (' . $res['backend'] . ', ' . $res['dispatched'] . ' call' .
+            ($res['dispatched'] === 1 ? '' : 's') . '). See Recent activity below for the result.';
     }
 
     // ---- Persistence -----------------------------------------------------
@@ -280,6 +315,7 @@ class Index extends AbstractRoute
         $configBlocks = $this->renderBackendConfigBlocks($r, $overrides, $effBackend);
         $diagBlock = $this->renderDiagBlock($diag);
         $activityBlock = $this->renderActivityBlock($siteId);
+        $toolsBlock = $this->renderToolsBlock($diag['effective'], $action);
         $docsBlock = $this->renderDocsBlock();
 
         return <<<HTML
@@ -357,6 +393,7 @@ class Index extends AbstractRoute
 </div>
 </form>
 
+{$toolsBlock}
 {$diagBlock}
 {$activityBlock}
 {$docsBlock}
@@ -516,7 +553,20 @@ HTML;
                       . '</div>';
                 break;
             case 'nivoli':
-                $body = '<p style="margin:0 0 14px;color:#334155;font-size:13.5px;line-height:1.55">'
+                // Real stats widget — pulled live from the Nivoli endpoint
+                // when it's set + reachable. One curl per CP page load,
+                // memoized within the request. Fails silently if the
+                // endpoint isn't accessible (network blip, wrong URL, etc.)
+                $statsWidget = '';
+                $effEndpoint = $overrides['nivoli_endpoint'] ?? ($r['nivoli_endpoint'] ?? '');
+                if ($effEndpoint) {
+                    $stats = $this->fetchNivoliStats($effEndpoint);
+                    if ($stats) {
+                        $statsWidget = $this->renderNivoliStatsWidget($stats);
+                    }
+                }
+                $body = $statsWidget
+                      . '<p style="margin:0 0 14px;color:#334155;font-size:13.5px;line-height:1.55">'
                       . 'Managed full-page caching on Cloudflare with a 404 dashboard, attack blackholing, '
                       . 'and tag purge baked in. Paste the dashboard URL from your Nivoli account — every '
                       . 'entry save will POST the affected tags to <code>&lt;url&gt;/purge-tag</code> and the '
@@ -731,6 +781,141 @@ HTML;
             . '<p style="margin:0 0 14px;color:#64748b;font-size:13px">Every purge dispatched by this addon. Use it to confirm saves are firing, debug a misconfigured backend, or see what your edge is being told to evict.</p>'
             . $rowsHtml
             . '</div>';
+    }
+
+    /**
+     * Quick actions card — manual tag purge + (when backend=nivoli)
+     * an "Open dashboard" link to the live traffic view.
+     *
+     * Tag purge form posts back to /index with ect_action=purge_tags.
+     * The route handler picks that up, calls
+     * Edge_cache_tags_ext::manual_purge_tags(), and the result lands
+     * in the Recent activity log below.
+     */
+    private function renderToolsBlock(array $eff, string $action): string
+    {
+        $h = fn($v) => htmlspecialchars((string) $v);
+        $backend = $eff['backend'] ?: 'none';
+
+        // Dashboard link is only meaningful for Nivoli (it's the only
+        // backend with a customer-facing dashboard at the URL itself).
+        $dashboardBlock = '';
+        if ($backend === 'nivoli' && !empty($eff['nivoli_endpoint'])) {
+            $dashboardBlock = '<div style="background:#f0f9ff;border:1px solid #bfdbfe;border-radius:7px;padding:14px 16px;margin-bottom:14px">'
+                . '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">'
+                . '<div style="flex:1 1 240px">'
+                .   '<strong style="display:block;color:#0c4a6e;margin-bottom:2px">Live traffic dashboard</strong>'
+                .   '<span style="color:#0369a1;font-size:13px">Hit rate, cache savings, request timeline, 404 / 5xx triage, URL rules — all on your Nivoli dashboard.</span>'
+                . '</div>'
+                . '<a href="' . $h($eff['nivoli_endpoint']) . '" target="_blank" rel="noopener" '
+                . 'style="background:#0284c7;color:white !important;padding:8px 18px;border-radius:5px;text-decoration:none;font-weight:600;font-size:13px;white-space:nowrap">Open dashboard →</a>'
+                . '</div></div>';
+        }
+
+        // Tag purge form — works for every backend that has credentials
+        // configured. When backend=none, render disabled with an
+        // explanatory hint.
+        $disabled = ($backend === 'none');
+        $hint = $disabled
+            ? '<span style="color:#b45309;font-weight:500">Pick a backend above before this form can dispatch.</span>'
+            : 'Space- or comma-separated. Common tags: <code>home</code>, <code>all</code>, <code>channel-news</code>, <code>entry-123</code>.';
+        $btnAttr = $disabled ? 'disabled' : '';
+        $btnStyle = $disabled
+            ? 'background:#cbd5e1;color:#64748b !important;padding:9px 22px;border-radius:6px;border:0;font-weight:600;font-size:13px;cursor:not-allowed'
+            : 'background:#1d4ed8;color:white !important;padding:9px 22px;border-radius:6px;border:0;font-weight:600;font-size:13px;cursor:pointer';
+
+        $purgeForm = '<form method="POST" action="' . $h($action) . '" style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;margin-bottom:6px">'
+            . '<input type="hidden" name="ect_action" value="purge_tags">'
+            . '<input type="text" name="purge_tags_input" placeholder="home channel-news entry-42" '
+            . 'style="flex:1 1 280px;padding:9px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:ui-monospace,Menlo,monospace" ' . $btnAttr . '>'
+            . '<button type="submit" style="' . $btnStyle . '" ' . $btnAttr . '>Purge tags</button>'
+            . '</form>'
+            . '<div style="font-size:12.5px;color:#64748b;line-height:1.5">' . $hint . '</div>';
+
+        return '<div class="ect-card">'
+            . '<h2 style="margin:0 0 4px">Quick actions</h2>'
+            . '<p class="sub" style="margin:0 0 16px;color:#64748b">Manual purges when you change something outside an entry save (template edit, asset update, fix to a hand-rolled URL).</p>'
+            . $dashboardBlock
+            . '<h3 style="margin:0 0 8px;font-size:14px;color:#1e293b">Purge tags manually</h3>'
+            . $purgeForm
+            . '</div>';
+    }
+
+    /**
+     * Fetch live stats from a Nivoli endpoint. Returns null on any
+     * failure — caller decides whether to fall back to a placeholder.
+     * One curl per CP page load; we memoize within the request via
+     * static cache. Short timeout so a slow Nivoli doesn't hold up CP
+     * rendering.
+     */
+    private static $stats_cache = null;
+    private static $stats_cache_key = null;
+    private function fetchNivoliStats(string $endpoint): ?array
+    {
+        if (!$endpoint) return null;
+        if (self::$stats_cache_key === $endpoint && self::$stats_cache !== null) {
+            return self::$stats_cache ?: null;
+        }
+        $url = rtrim($endpoint, '/') . '/stats?hours=720'; // 30d window
+        $ch = curl_init($url);
+        if (!$ch) return null;
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 4,
+            CURLOPT_CONNECTTIMEOUT => 2,
+            CURLOPT_FAILONERROR    => false,
+            CURLOPT_USERAGENT      => 'edge-cache-tags-ee-cp/2.3.0',
+        ]);
+        $body = @curl_exec($ch);
+        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        $data = null;
+        if ($status === 200 && is_string($body)) {
+            $parsed = json_decode($body, true);
+            if (is_array($parsed)) $data = $parsed;
+        }
+        self::$stats_cache = $data ?: [];
+        self::$stats_cache_key = $endpoint;
+        return $data;
+    }
+
+    /**
+     * Build a small "your stats" widget from the parsed /stats payload.
+     * Returns empty string if data isn't available or doesn't have the
+     * keys we need.
+     */
+    private function renderNivoliStatsWidget(array $stats): string
+    {
+        $summary = $stats['summary'] ?? [];
+        $savings = $stats['savings'] ?? [];
+        $totalReqs   = (int)   ($summary['totalRequests'] ?? 0);
+        $hitRate     = (float) ($summary['hitRate'] ?? 0);   // 0..1
+        $bytesSaved  = (int)   ($savings['cache_served_bytes'] ?? 0);
+        if ($totalReqs <= 0) return '';
+
+        $fmtNum = function (int $n): string {
+            if ($n >= 1_000_000) return number_format($n / 1_000_000, 1) . 'M';
+            if ($n >= 1_000)     return number_format($n / 1_000, 1) . 'k';
+            return (string) $n;
+        };
+        $fmtBytes = function (int $b): string {
+            if ($b >= 1_073_741_824) return number_format($b / 1_073_741_824, 1) . ' GB';
+            if ($b >= 1_048_576)     return number_format($b / 1_048_576, 1) . ' MB';
+            if ($b >= 1024)          return number_format($b / 1024, 1) . ' KB';
+            return $b . ' B';
+        };
+        $hitPct = round($hitRate * 100);
+
+        return '<div style="background:linear-gradient(135deg,#065f46 0%,#0e7490 100%);color:white;border-radius:8px;padding:16px 20px;margin-bottom:16px;box-shadow:0 3px 12px rgba(6,95,70,0.18)">'
+            . '<div style="font-size:11px;font-weight:700;letter-spacing:0.10em;text-transform:uppercase;color:#6ee7b7;margin-bottom:8px">📊 Your cache performance · last 30 days</div>'
+            . '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px">'
+            . '<div><div style="font-size:11px;opacity:0.78;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px">Hit rate</div>'
+            . '<div style="font-size:24px;font-weight:700;line-height:1.1">' . $hitPct . '%</div></div>'
+            . '<div><div style="font-size:11px;opacity:0.78;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px">Requests served</div>'
+            . '<div style="font-size:24px;font-weight:700;line-height:1.1">' . $fmtNum($totalReqs) . '</div></div>'
+            . '<div><div style="font-size:11px;opacity:0.78;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px">Origin bandwidth saved</div>'
+            . '<div style="font-size:24px;font-weight:700;line-height:1.1">' . $fmtBytes($bytesSaved) . '</div></div>'
+            . '</div></div>';
     }
 
     private function renderDocsBlock(): string
