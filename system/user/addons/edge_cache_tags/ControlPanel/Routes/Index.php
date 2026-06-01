@@ -49,6 +49,8 @@ class Index extends AbstractRoute
             $postAction = (string) ee()->input->post('ect_action');
             if ($postAction === 'purge_tags') {
                 $msg = $this->handleManualPurge();
+            } elseif ($postAction === 'reinstall_hooks') {
+                $msg = $this->handleReinstallHooks();
             } else {
                 $this->save($siteId);
                 $msg = 'Settings saved.';
@@ -61,6 +63,30 @@ class Index extends AbstractRoute
 
         $this->setBody($this->render($siteId, $row, $configOverrides, $action, $msg, $diag));
         return $this;
+    }
+
+    /**
+     * Re-run the installer's idempotent ensure* methods on demand. The
+     * primary use case: an upgrade landed without going through EE's
+     * "Update" button (e.g. files copied in by ssh) so exp_extensions /
+     * exp_menu_items / exp_modules can be stale or missing rows. The
+     * diag block surfaces a button when it detects 0 extension hooks;
+     * this handler runs the same backfill the upd.*.php would.
+     */
+    private function handleReinstallHooks(): string
+    {
+        try {
+            require_once SYSPATH . 'user/addons/edge_cache_tags/upd.edge_cache_tags.php';
+            $upd = new \Edge_cache_tags_upd();
+            // update() is the idempotent self-heal path; calls all four
+            // ensure* methods. Pass an empty current-version so EE doesn't
+            // try to run real version-to-version migration logic — we
+            // just want the backfills.
+            $upd->update('');
+            return 'Reinstall complete — hooks, sidebar entry, modules row, and tables verified.';
+        } catch (\Throwable $e) {
+            return 'Reinstall failed: ' . $e->getMessage();
+        }
     }
 
     /**
@@ -186,31 +212,52 @@ class Index extends AbstractRoute
                 : (empty($overrides) ? 'using defaults' : 'all values pinned via config.php'),
         ];
 
-        // 2. Extension hooks registered + enabled. Should be 3:
+        // 2. Extension hooks registered + enabled. Should be 4:
         //    cp_custom_menu, template_post_parse, after_channel_entry_save,
-        //    after_channel_entry_delete
+        //    after_channel_entry_delete.
+        //
+        // When this comes back 0 (which has happened — some upgrade
+        // paths leave exp_extensions empty), the front end emits no
+        // headers and saves dispatch no purges. The CP fixHooks action
+        // below lets the operator backfill without uninstall+reinstall.
         $hookRows = (int) ee()->db->where([
             'class'   => 'Edge_cache_tags_ext',
             'enabled' => 'y',
         ])->count_all_results('extensions');
+        $hookDetail = $hookRows . ' enabled row(s) — expected 4 (cp_custom_menu, template_post_parse, after_channel_entry_save, after_channel_entry_delete)';
+        if ($hookRows < 4) {
+            $hookDetail .= ' — headers will not emit and purges will not dispatch. Click "Reinstall hooks" below, or run Update on the Add-Ons listing.';
+        }
         $checks[] = [
             'label'  => 'Extension hooks',
             'ok'     => $hookRows >= 4,
-            'detail' => $hookRows . ' enabled row(s) — expected 4 (cp_custom_menu, template_post_parse, after_channel_entry_save, after_channel_entry_delete)',
+            'detail' => $hookDetail,
+            // Tells the renderer to append a reinstall-hooks button row
+            // when this check is failing.
+            'action' => $hookRows < 4 ? 'reinstall_hooks' : null,
         ];
 
-        // 2b. Sidebar menu item — required for the cp_custom_menu hook to
-        // fire. EE only iterates exp_menu_items rows.
-        $menuRows = (int) ee()->db->where([
-            'type' => 'addon',
-            'data' => 'Edge_cache_tags_ext',
-        ])->count_all_results('menu_items');
+        // 2b. Sidebar menu item — type='addon' rows are rendered directly
+        // by core EE; the row's `data` field is the URL slug. Must be the
+        // addon shortname `edge_cache_tags`. v2.4.0 and earlier used the
+        // class name `Edge_cache_tags_ext`, which produced a wrong URL;
+        // installer migrates on update.
+        $menuRows = (int) ee()->db->where('type', 'addon')
+            ->where_in('data', ['edge_cache_tags', 'Edge_cache_tags_ext'])
+            ->count_all_results('menu_items');
+        $menuLegacy = (int) ee()->db->where('type', 'addon')
+            ->where('data', 'Edge_cache_tags_ext')
+            ->count_all_results('menu_items');
+        $menuDetail = $menuRows > 0
+            ? 'present — addon shows in the CP sidebar'
+            : 'missing — addon won\'t appear in the CP sidebar (re-run Update on the Add-Ons listing)';
+        if ($menuLegacy > 0) {
+            $menuDetail = 'legacy slug detected (Edge_cache_tags_ext) — sidebar URL is broken. Re-run Update on the Add-Ons listing to migrate to the correct slug.';
+        }
         $checks[] = [
             'label'  => 'Sidebar menu entry',
-            'ok'     => $menuRows > 0,
-            'detail' => $menuRows > 0
-                ? 'present — addon shows in the CP sidebar'
-                : 'missing — addon won\'t appear in the CP sidebar (Update the addon to backfill)',
+            'ok'     => $menuRows > 0 && $menuLegacy === 0,
+            'detail' => $menuDetail,
         ];
 
         // 3. Addon files on disk.
@@ -747,6 +794,7 @@ HTML;
     private function renderDiagBlock(array $diag): string
     {
         $h = fn($v) => htmlspecialchars((string) $v);
+        $action = ee('CP/URL')->make('addons/settings/edge_cache_tags/index')->compile();
         $allOk = true;
         $rowsHtml = '';
         foreach ($diag['checks'] as $c) {
@@ -754,10 +802,19 @@ HTML;
             $icon = $c['ok']
                 ? '<span class="ect-diag-tick ok">✓</span>'
                 : '<span class="ect-diag-tick bad">!</span>';
+            $actionHtml = '';
+            if (($c['action'] ?? null) === 'reinstall_hooks') {
+                $actionHtml = '<form method="POST" action="' . htmlspecialchars($action, ENT_QUOTES) . '" style="grid-column:2 / span 2;margin:6px 0 2px;padding:0">'
+                    . '<input type="hidden" name="ect_action" value="reinstall_hooks">'
+                    . '<button type="submit" class="ect-btn" style="background:#b91c1c;padding:7px 14px;font-size:12.5px">Reinstall hooks</button>'
+                    . '<span style="margin-left:10px;font-size:12px;color:#475569">Idempotent — safe to click; settings + log are preserved.</span>'
+                    . '</form>';
+            }
             $rowsHtml .= '<div class="ect-diag-row ' . ($c['ok'] ? 'ok' : 'bad') . '">'
                 . $icon
                 . '<div class="ect-diag-label">' . $c['label'] . '</div>'
                 . '<div class="ect-diag-detail">' . $h($c['detail']) . '</div>'
+                . $actionHtml
                 . '</div>';
         }
         $summary = $allOk
@@ -1221,8 +1278,24 @@ $assign_to_config[\'edge_cache_tags_backend\']      = \'cloudflare\';
 $assign_to_config[\'edge_cache_tags_cf_zone_id\']   = \'...\';
 $assign_to_config[\'edge_cache_tags_cf_api_token\'] = \'...\';</pre>
 <p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
-  Put each site\'s overrides in its own front controller. Main site\'s defaults still come from <code>config.php</code> if anything\'s set there. Same lock-icon behavior in the CP — these count as &quot;set via config&quot;.
+  Put each site\'s overrides in its own front controller. Main site\'s defaults still come from <code>config.php</code> if anything\'s set there.
 </p>
+<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:12px 14px;margin:8px 0 14px;max-width:760px">
+  <p style="margin:0 0 6px;font-size:13px;color:#78350f;line-height:1.55"><strong>⚠️ Gotcha: <code>$assign_to_config</code> in <code>index.php</code> is front-end only.</strong></p>
+  <p style="margin:0 0 6px;font-size:12.5px;color:#78350f;line-height:1.6">
+    The Control Panel runs through <code>admin.php</code>, not <code>index.php</code>. So any <code>$assign_to_config</code> values you set in a site\'s <code>index.php</code> are read on front-end page hits (and the addon\'s header emit + auto-purge see them correctly), but the <strong>CP settings page can\'t see them</strong> — you\'ll get a "Backend credentials — unknown backend" warning in Diagnostics, and the form fields show as editable rather than 🔒 locked.
+  </p>
+  <p style="margin:0 0 6px;font-size:12.5px;color:#78350f;line-height:1.6">
+    Two ways to make the CP see the same values:
+  </p>
+  <ul style="margin:0 0 0 18px;font-size:12.5px;color:#78350f;line-height:1.6">
+    <li>Put them in <code>system/user/config/config.php</code> — shared across both front-controllers (recommended for single-site installs)</li>
+    <li>OR mirror them into <code>admin.php</code> as well — gate by hostname if you\'re running MSM (the CP doesn\'t know which MSM site you\'re viewing until after bootstrap, so per-host gating is the only way)</li>
+  </ul>
+  <p style="margin:8px 0 0;font-size:12.5px;color:#78350f;line-height:1.6">
+    None of this affects whether the addon actually <em>works</em> — front-end emits + purges still see the index.php values. It only affects what the CP visualizes.
+  </p>
+</div>
 <p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
   <strong>Tip for Nivoli users:</strong> if you want one Nivoli endpoint serving multiple MSM hostnames (single dashboard URL covering all sites), ask Nivoli support to link your tokens — the per-site <code>site-&lt;id&gt;-</code> tag prefix routes purges to the right hostname automatically. Otherwise, each MSM site gets its own dashboard URL.
 </p>

@@ -27,6 +27,7 @@ class Edge_cache_tags_upd extends Installer
         parent::install();
         $this->ensureModuleRow();
         $this->ensureMenuItem();
+        $this->ensureExtensionHooks();
         $this->createTables();
         $this->seedSettings();
         return true;
@@ -40,9 +41,13 @@ class Edge_cache_tags_upd extends Installer
         // gear on the Add-Ons card. Backfill on every update() so an
         // upgrade from v2.0.0 (or any pre-CP version) self-heals without
         // requiring the operator to uninstall+reinstall. v2.3.5 adds the
-        // sidebar menu_items row to the same idempotent path.
+        // sidebar menu_items row, v2.4.1 adds the extension hook rows
+        // (some upgrade paths landed with 0 rows in exp_extensions — no
+        // hooks register, no headers emit, no purges dispatch — so we
+        // belt-and-suspenders backfill those too).
         $this->ensureModuleRow();
         $this->ensureMenuItem();
+        $this->ensureExtensionHooks();
         $this->createTables();
         $this->seedSettings();
         return true;
@@ -59,7 +64,7 @@ class Edge_cache_tags_upd extends Installer
         $row = ee()->db->where('module_name', 'Edge_cache_tags')
             ->get('modules')->row_array();
         $payload = [
-            'module_version'     => '2.4.0',
+            'module_version'     => '2.4.1',
             'has_cp_backend'     => 'y',
             'has_publish_fields' => 'n',
         ];
@@ -71,29 +76,91 @@ class Edge_cache_tags_upd extends Installer
     }
 
     /**
-     * Make sure exp_menu_items has a row pointing at our extension
-     * class. EE only invokes cp_custom_menu hooks for classes referenced
-     * here; without this row the addon won't appear in the CP sidebar
-     * (the hook itself can be registered, but EE never calls it).
-     * Set_id=1 is the default sidebar set in stock EE installs.
+     * Make sure exp_menu_items has a row pointing at our addon. For
+     * type='addon' EE uses the `data` field as the URL slug for the
+     * sidebar link — `?/cp/addons/settings/<data>` — so it MUST be the
+     * addon's directory shortname `edge_cache_tags`, NOT the extension
+     * class name. v2.3.5 / v2.4.0 shipped with `Edge_cache_tags_ext` in
+     * this field, which made the sidebar link 404 / land on a wrong
+     * settings URL. v2.4.1 migrates existing rows to the correct slug.
      * Idempotent.
      */
     private function ensureMenuItem(): void
     {
         if (!ee()->db->table_exists('menu_items')) return;
-        $exists = (int) ee()->db->where([
+
+        // Migrate any legacy row that used the class name as the slug.
+        ee()->db->where([
             'type' => 'addon',
             'data' => 'Edge_cache_tags_ext',
+        ])->update('menu_items', ['data' => 'edge_cache_tags']);
+
+        $exists = (int) ee()->db->where([
+            'type' => 'addon',
+            'data' => 'edge_cache_tags',
         ])->count_all_results('menu_items');
         if ($exists > 0) return;
         ee()->db->insert('menu_items', [
             'parent_id' => 0,
             'set_id'    => 1,
             'name'      => 'Edge Cache Tags',
-            'data'      => 'Edge_cache_tags_ext',
+            'data'      => 'edge_cache_tags',
             'type'      => 'addon',
             'sort'      => 100,
         ]);
+    }
+
+    /**
+     * Backfill exp_extensions rows for every hook declared in
+     * addon.setup.php. EE's parent::install() / parent::update() is
+     * supposed to do this from the manifest, but some upgrade paths
+     * (most notably: dropping new files over an older install without
+     * clicking "Update" in the CP) leave 0 rows registered. Result:
+     * no headers emit, no purges dispatch — the addon is silent.
+     *
+     * This method reads the manifest itself and inserts whatever's
+     * missing. Idempotent: existing rows get their version bumped, new
+     * rows get inserted. Each insert sets enabled='y' so the hook is
+     * live immediately. Safe to call on every install/update.
+     */
+    private function ensureExtensionHooks(): void
+    {
+        if (!ee()->db->table_exists('extensions')) return;
+        $manifest = include __DIR__ . '/addon.setup.php';
+        $hooks = (array) ($manifest['hooks'] ?? []);
+        $class = 'Edge_cache_tags_ext';
+        $version = (string) ($manifest['version'] ?? '0');
+        foreach ($hooks as $h) {
+            $hook   = (string) ($h['hook']   ?? '');
+            $method = (string) ($h['method'] ?? $hook);
+            $prio   = (int)    ($h['priority'] ?? 10);
+            if ($hook === '') continue;
+            $existing = ee()->db->where([
+                'class'  => $class,
+                'method' => $method,
+                'hook'   => $hook,
+            ])->get('extensions')->row_array();
+            $payload = [
+                'class'    => $class,
+                'method'   => $method,
+                'hook'     => $hook,
+                'settings' => '',
+                'priority' => $prio,
+                'version'  => $version,
+                'enabled'  => 'y',
+            ];
+            if ($existing) {
+                ee()->db->where([
+                    'class' => $class, 'method' => $method, 'hook' => $hook,
+                ])->update('extensions', [
+                    'version' => $version,
+                    'enabled' => 'y',
+                    'priority' => $prio,
+                ]);
+            } else {
+                ee()->db->insert('extensions', $payload);
+            }
+        }
     }
 
     public function uninstall()
@@ -109,8 +176,14 @@ class Edge_cache_tags_upd extends Installer
             ee()->db->where('module_name', 'Edge_cache_tags')->delete('modules');
         }
         if (ee()->db->table_exists('menu_items')) {
-            ee()->db->where(['type' => 'addon', 'data' => 'Edge_cache_tags_ext'])
+            // Both the v2.4.0 (class-name) and v2.4.1+ (shortname) slugs,
+            // so reinstall after upgrade doesn't leave a stale row behind.
+            ee()->db->where('type', 'addon')
+                ->where_in('data', ['edge_cache_tags', 'Edge_cache_tags_ext'])
                 ->delete('menu_items');
+        }
+        if (ee()->db->table_exists('extensions')) {
+            ee()->db->where('class', 'Edge_cache_tags_ext')->delete('extensions');
         }
         return true;
     }
