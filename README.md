@@ -35,7 +35,7 @@ $config['edge_cache_tags_cf_zone_id']    = '<zone-id>';
 $config['edge_cache_tags_cf_api_token']  = '<api-token-scoped-to-Zone:Cache-Purge>';
 
 // Nivoli
-$config['edge_cache_tags_nivoli_endpoint'] = 'https://console.nivoli.com/dashboard/<token>';
+$config['edge_cache_tags_nivoli_endpoint'] = 'https://console.nivoli.com/cache/<token>';
 
 // Generic webhook
 $config['edge_cache_tags_webhook_url']    = 'https://your-edge.example.com/purge';

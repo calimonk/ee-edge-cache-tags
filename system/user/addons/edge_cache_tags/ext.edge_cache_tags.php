@@ -22,7 +22,7 @@
  *                                        'cloudflare' | 'webhook';
  *
  *   // Backend-specific:
- *   $config['edge_cache_tags_nivoli_endpoint'] = 'https://console.nivoli.com/dashboard/<token>';
+ *   $config['edge_cache_tags_nivoli_endpoint'] = 'https://console.nivoli.com/cache/<token>';
  *   $config['edge_cache_tags_fastly_service']  = '<service-id>';
  *   $config['edge_cache_tags_fastly_api_key']  = '<api-token>';
  *   $config['edge_cache_tags_cf_zone_id']      = '<zone-id>';
