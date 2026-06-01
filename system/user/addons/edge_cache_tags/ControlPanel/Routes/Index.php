@@ -1012,6 +1012,22 @@ HTML;
 ' . $listingExample . '
 <p style="margin-top:8px;font-size:13px;color:#475569">Listing pages tag EACH entry they display, plus the channel. Saving any one of those 20 entries purges this listing. Adding a 21st entry also purges it (the <code>channel-news</code> tag fires on every save in that channel).</p>
 
+<h4 style="margin:14px 0 4px;font-size:13px;font-weight:600;color:#1e293b">What about paginated pages? (<code>/games/</code>, <code>/games/P20</code>, <code>/games/P40</code> …)</h4>
+<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
+  Every paginated page runs the <strong>same template</strong>, so they all emit the same <code>channel-&lt;name&gt;</code> tag. Each page additionally tags only the 20 entries currently visible on it (page 1 → <code>entry-1</code> … <code>entry-20</code>, page 3 → <code>entry-41</code> … <code>entry-60</code>, etc).
+</p>
+<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
+  <strong>The result:</strong>
+</p>
+<ul style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.55">
+  <li>Edit entry-50 → fires <code>entry-50</code> + <code>channel-games</code> → page 3 (which had entry-50) evicts via entry-50, the rest of the pagination evicts via channel-games. All pagination pages refresh together.</li>
+  <li>Add a NEW entry → fires <code>channel-games</code> → all pagination pages evict (correct — a new entry shifts the order).</li>
+  <li>Delete entry-25 → same: <code>channel-games</code> fires, all pages refresh.</li>
+</ul>
+<p style="margin:0 0 0;font-size:13px;color:#475569;line-height:1.55">
+  So <strong><code>channel-&lt;name&gt;</code> is the load-bearing tag for paginated listings</strong> — make sure your listing template emits it. The per-entry tags are belt-and-suspenders: they make individual edits land surgically (only the page that featured the edited entry would <em>need</em> to refresh), and they\'re useful when one template hosts a list AND another template embeds the same entries (think: a featured-3 widget on the homepage that uses <code>{exp:channel:entries limit="3"}</code>).
+</p>
+
 <h3>Why <code>entry-&lt;id&gt;</code> and not <code>url_title</code> or the full URL?</h3>
 <ul>
   <li><strong>Stability.</strong> Entry IDs never change. URL titles change when an editor edits a slug; URLs change when you reorganize taxonomies. Tags tied to IDs survive those edits.</li>
