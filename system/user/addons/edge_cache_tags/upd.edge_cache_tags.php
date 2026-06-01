@@ -25,6 +25,7 @@ class Edge_cache_tags_upd extends Installer
     public function install()
     {
         parent::install();
+        $this->ensureModuleRow();
         $this->createTables();
         $this->seedSettings();
         return true;
@@ -33,9 +34,37 @@ class Edge_cache_tags_upd extends Installer
     public function update($current = '')
     {
         parent::update($current);
+        // v2.0.0 was extension-only (no upd.*.php), so exp_modules has no
+        // row for us. Without that row, EE doesn't show the settings
+        // gear on the Add-Ons card. Backfill on every update() so an
+        // upgrade from v2.0.0 (or any pre-CP version) self-heals without
+        // requiring the operator to uninstall+reinstall.
+        $this->ensureModuleRow();
         $this->createTables();
         $this->seedSettings();
         return true;
+    }
+
+    /**
+     * Make sure exp_modules has the row EE needs to render the settings
+     * cog on the Add-Ons card. Idempotent: inserts when missing, updates
+     * the version + has_cp_backend flag if the row exists but is stale.
+     */
+    private function ensureModuleRow(): void
+    {
+        if (!ee()->db->table_exists('modules')) return; // EE core table, should always exist
+        $row = ee()->db->where('module_name', 'Edge_cache_tags')
+            ->get('modules')->row_array();
+        $payload = [
+            'module_version'     => '2.1.1',
+            'has_cp_backend'     => 'y',
+            'has_publish_fields' => 'n',
+        ];
+        if ($row) {
+            ee()->db->where('module_name', 'Edge_cache_tags')->update('modules', $payload);
+        } else {
+            ee()->db->insert('modules', array_merge(['module_name' => 'Edge_cache_tags'], $payload));
+        }
     }
 
     public function uninstall()
@@ -43,6 +72,12 @@ class Edge_cache_tags_upd extends Installer
         parent::uninstall();
         ee()->load->dbforge();
         ee()->dbforge->drop_table('edge_cache_tags_settings', true);
+        // Clean up the modules row in case parent::uninstall() didn't
+        // (it normally would, but we backfilled it ourselves in update()
+        // so the addon claims it on the way out too).
+        if (ee()->db->table_exists('modules')) {
+            ee()->db->where('module_name', 'Edge_cache_tags')->delete('modules');
+        }
         return true;
     }
 
