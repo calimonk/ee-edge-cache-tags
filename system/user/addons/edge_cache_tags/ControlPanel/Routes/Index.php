@@ -6,7 +6,13 @@ use ExpressionEngine\Service\Addon\Controllers\Mcp\AbstractRoute;
 /**
  * Edge Cache Tags — Settings + Diagnostics + Docs (all in one page).
  *
- * URL: ?/cp/addons/settings/edge_cache_tags/settings
+ * URL: ?/cp/addons/settings/edge_cache_tags  (bare = index route)
+ *
+ * The class name + filename + route_path are all 'index' because EE's CP
+ * gear icon on the Add-Ons card links to the BARE addon URL with no
+ * sub-path. v2.1.0–v2.1.2 named this 'settings' / Settings.php, which
+ * meant the gear redirected back to the Add-Ons list — EE couldn't find
+ * an index handler.
  *
  * Three blocks on the page:
  *   1. Settings form — backend dropdown + per-backend credential fields,
@@ -21,20 +27,20 @@ use ExpressionEngine\Service\Addon\Controllers\Mcp\AbstractRoute;
  *   3. Inline docs — what tags get emitted, what gets purged, link to
  *      the README for filter hooks and the template plugin.
  */
-class Settings extends AbstractRoute
+class Index extends AbstractRoute
 {
-    protected $route_path = 'settings';
-    protected $cp_page_title = 'Edge Cache Tags · Settings';
+    protected $route_path = 'index';
+    protected $cp_page_title = 'Edge Cache Tags';
 
     private const BACKENDS = ['none', 'nivoli', 'fastly', 'cloudflare', 'webhook'];
 
     public function process($id = false)
     {
-        $this->addBreadcrumb('settings', 'Settings');
+        $this->addBreadcrumb('index', 'Edge Cache Tags');
 
         $siteId = (int) ee()->config->item('site_id');
         $msg = null;
-        $action = ee('CP/URL')->make('addons/settings/edge_cache_tags/settings')->compile();
+        $action = ee('CP/URL')->make('addons/settings/edge_cache_tags/index')->compile();
 
         if (ee('Request')->method() === 'POST') {
             $this->save($siteId);
@@ -161,7 +167,7 @@ class Settings extends AbstractRoute
         $files = [
             'addon.setup.php', 'ext.edge_cache_tags.php', 'mod.edge_cache_tags.php',
             'mcp.edge_cache_tags.php', 'upd.edge_cache_tags.php',
-            'ControlPanel/Routes/Settings.php',
+            'ControlPanel/Routes/Index.php',
         ];
         $base = SYSPATH . 'user/addons/edge_cache_tags/';
         $missing = [];
