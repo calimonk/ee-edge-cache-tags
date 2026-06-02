@@ -1,14 +1,47 @@
 # Edge Cache Tags — ExpressionEngine add-on
 
-Emits `Surrogate-Key` + `Cache-Tag` response headers so any tag-aware edge
-cache (Fastly, Cloudflare Enterprise, Varnish, Nivoli, your own) can tag
-each page with what it represents. When a channel entry is saved or
-deleted, dispatches the right tag-based purge to whichever backend
-you've configured.
+> Surgical tag-based purges for any tag-aware edge cache. One entry save → only the affected pages evict. MSM-aware out of the box.
 
-The payoff: publishing one entry clears its entry page **and** every
-listing it appears on (homepage, its channel index, its category
-archives) in a single API call — no URL enumeration.
+[![Latest Release](https://img.shields.io/github/v/release/calimonk/ee-edge-cache-tags?label=release)](https://github.com/calimonk/ee-edge-cache-tags/releases/latest)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![ExpressionEngine](https://img.shields.io/badge/ExpressionEngine-7%2B-fb6e1e)](https://expressionengine.com/)
+[![PHP](https://img.shields.io/badge/PHP-7.4%2B-777bb4)](https://www.php.net/)
+
+Drop-in EE 7+ add-on that:
+
+1. **Tags every front-end response** with a `Surrogate-Key` (and `Cache-Tag` if you're on Cloudflare Enterprise) header listing what's on the page — entry id, channel name, category ids, path, page type.
+2. **Fires a surgical purge** to your edge cache the moment a channel entry is saved, updated, or deleted — listing only the tags that actually changed. No URL list to maintain, no whole-site nukes.
+
+Works with **[Fastly](https://www.fastly.com/)**, **[Cloudflare Enterprise](https://developers.cloudflare.com/cache/how-to/purge-cache/purge-cache-tags/)**, **[Nivoli](https://nivoli.com/)** (free tier — managed CF edge), Varnish/xkey, or any custom webhook handler.
+
+> **Pairs natively with [Nivoli](https://nivoli.com/)** — managed full-page caching on Cloudflare's edge, built by the same team. Drop the dashboard URL into the Setup tab and you're done. Free tier: 1 domain, ~100k req/mo, no credit card. [Sign up free →](https://console.nivoli.com/signup)
+
+## Highlights
+
+- **Surgical**: saving one entry evicts the entry page + homepage + its channel index + its category archives. Nothing else.
+- **MSM-aware**: every tag is prefixed with `site-<id>-` so sites in the same install never evict each other's pages. Install-wide "purge all" stays available.
+- **Top-level Edge Cache CP module**: live cache stats, recent activity log (last 50 purges), built-in diagnostics, trace mode.
+- **Non-blocking**: entry save returns immediately; purge fires via curl multi with a short timeout — slow edge never hangs the CP.
+- **GitHub auto-updates**: future versions show as a regular "Update available" in the CP. Daily off-request poll.
+- **Token-scope verification**: with Nivoli, the Setup tab confirms the current site is in the token's allowed hostnames — catches misconfigs at render time, not in the activity log.
+- **MIT-licensed**, native PHP files, no Composer / build step.
+
+## Quick start
+
+```bash
+# 1. Download the latest release zip
+curl -LO https://github.com/calimonk/ee-edge-cache-tags/releases/latest/download/edge-cache-tags.zip
+
+# 2. Extract into system/user/addons/edge_cache_tags/
+
+# 3. CP → Developer → Add-Ons → install Edge Cache Tags
+
+# 4. CP → Edge Cache → Setup → pick backend → save credentials.
+```
+
+Done. Channel-entry saves now fire surgical purges. See **[codebit.nl/edge-cache-ee](https://codebit.nl/edge-cache-ee/)** for the full product page.
+
+---
 
 ## Install
 
@@ -25,13 +58,15 @@ Two equivalent ways — pick whichever fits your workflow:
 
 ### CP settings page (recommended for non-developers)
 
-**CP → Developer → Add-Ons → Edge Cache Tags** opens a settings +
-diagnostics page. Per-site backend dropdown, credential fields, sample
-emitted keys, and a tick-list of installation health checks (hook
-registration, addon files present, MSM site count, backend creds OK).
+**CP → Edge Cache** (top-level sidebar entry, added in v2.4.13) opens a
+tabbed module with four panels: **Setup** (backend + credentials + live
+stats + token scope), **Status** (hook registration / addon files / MSM
+detection / backend creds OK probes + config-resolution panel),
+**Activity** (last 50 purges with status, duration, trigger), and
+**Documentation**.
 
 On MSM installs, switch the EE site picker first to configure each
-site.
+site — each MSM site stores its own row.
 
 ### config.php (developers / config-as-code)
 
@@ -204,10 +239,17 @@ host-language plumbing (curl vs `wp_remote_post`) differs.
 
 ## Requirements
 
-- ExpressionEngine 6 or 7
-- PHP 7.2+ (uses `??` null-coalescing and `Throwable`)
+- ExpressionEngine 7+
+- PHP 7.4+
 - A tag-aware edge cache **OR** the willingness to write your own purge
   handler against the generic webhook.
+
+## Get help / connect
+
+- **Product page**: [codebit.nl/edge-cache-ee](https://codebit.nl/edge-cache-ee/) — feature tour, install guide, backend matrix.
+- **Sister WP plugin**: [calimonk/wp-edge-cache-tags](https://github.com/calimonk/wp-edge-cache-tags) — same surgical-purge model, for WordPress.
+- **Need a managed edge?**: [Nivoli](https://nivoli.com/) free tier wires up in ~90 seconds — 1 domain, ~100k req/mo, no credit card.
+- **Issues / PRs**: welcome on this repo.
 
 ## License
 
