@@ -680,6 +680,62 @@ HTML;
             . $this->cfgPanel('webhook', 'Custom webhook', $r, $overrides, $effBackend === 'webhook');
     }
 
+    /**
+     * Shared Nivoli pitch — the dark-gradient hero shown when backend=none.
+     * v2.4.11 trim: hero + 3-pill row + CTA, half the height of the previous
+     * incarnation. Same visual asset is mirrored in the WordPress plugin so
+     * the marketing surface stays consistent across the two integrations.
+     */
+    private static function renderNivoliPitch(): string
+    {
+        return '<div style="background:linear-gradient(135deg,#1e1b4b 0%,#7c3aed 55%,#db2777 100%);color:white;border-radius:10px;margin-top:18px;overflow:hidden;box-shadow:0 6px 24px rgba(124,58,237,0.22)">'
+
+              // Hero
+              . '<div style="padding:24px 28px 18px">'
+              . '<div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#fbbf24;margin-bottom:10px">⚡ Full-page HTML caching on Cloudflare</div>'
+              . '<h3 style="margin:0 0 12px;color:white;font-size:23px;font-weight:700;line-height:1.2;letter-spacing:-0.015em">Cloudflare doesn\'t cache HTML.<br><span style="color:#fbbf24">Nivoli does.</span></h3>'
+              . '<p style="margin:0 0 8px;font-size:14px;line-height:1.6;opacity:0.95">'
+              . 'Out of the box, Cloudflare caches CSS, JS, and images at the edge — every HTML pageview still round-trips to origin. '
+              . '<strong>Nivoli adds the missing layer:</strong> full-page HTML caching on Cloudflare\'s global network. '
+              . 'Every visitor hits Cloudflare; only <strong style="color:#fbbf24">cache MISSes touch origin</strong>.</p>'
+              . '<p style="margin:0;font-size:13.5px;line-height:1.55;opacity:0.92">'
+              . '<strong>And it stays correct.</strong> This addon fires tag purge on entry save — only affected pages refresh, never the whole cache.</p>'
+              . '</div>'
+
+              // 3-pill differentiator row
+              . '<div style="padding:0 28px 20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px">'
+
+              . '<div style="background:rgba(52,211,153,0.14);border:1px solid rgba(52,211,153,0.38);padding:11px 14px;border-radius:7px;font-size:12.5px;line-height:1.5">'
+              .   '<strong style="color:#6ee7b7;display:block;margin-bottom:3px;font-size:12.5px">🛡 Attack blackholing</strong>'
+              .   '<span style="opacity:0.88">.env / .git / xmlrpc / wp-admin probes return 404 at the edge. Origin never sees them.</span>'
+              . '</div>'
+
+              . '<div style="background:rgba(192,132,252,0.16);border:1px solid rgba(192,132,252,0.42);padding:11px 14px;border-radius:7px;font-size:12.5px;line-height:1.5">'
+              .   '<strong style="color:#d8b4fe;display:block;margin-bottom:3px;font-size:12.5px">⏱ Stale-on-error</strong>'
+              .   '<span style="opacity:0.88">Origin down? Cache keeps serving visitors for up to 7 days. Site stays up while you fix things.</span>'
+              . '</div>'
+
+              . '<div style="background:rgba(251,191,36,0.14);border:1px solid rgba(251,191,36,0.45);padding:11px 14px;border-radius:7px;font-size:12.5px;line-height:1.5">'
+              .   '<strong style="color:#fcd34d;display:block;margin-bottom:3px;font-size:12.5px">⚠ 404 + 5xx dashboards</strong>'
+              .   '<span style="opacity:0.88">Live broken-URL clustering with redirect suggestions. Captured origin failures. Block patterns at the edge.</span>'
+              . '</div>'
+
+              . '</div>'
+
+              // CTA
+              . '<div style="padding:18px 28px;background:rgba(0,0,0,0.32);display:flex;align-items:center;gap:18px;flex-wrap:wrap">'
+              . '<a href="https://console.nivoli.com/signup" target="_blank" rel="noopener" '
+              . 'style="background:#fbbf24;color:#1e1b4b !important;padding:11px 24px;border-radius:7px;text-decoration:none;font-weight:700;font-size:14.5px;letter-spacing:-0.01em;box-shadow:0 2px 12px rgba(251,191,36,0.40)">Start free →</a>'
+              . '<div style="font-size:13px;opacity:0.95;line-height:1.5">'
+              .   '<strong style="color:#34d399">Free tier:</strong> 1 domain, ~100k req/mo. '
+              .   '<strong style="color:#93c5fd">No credit card.</strong> '
+              .   '<strong style="color:#fcd34d">~90 seconds</strong> from signup to first cached page.'
+              . '</div>'
+              . '</div>'
+
+              . '</div>';
+    }
+
     private function cfgPanel(string $kind, string $title, array $r, array $overrides, bool $active): string
     {
         $cls = 'ect-backend-cfg' . ($active ? ' active' : '');
@@ -687,100 +743,24 @@ HTML;
         switch ($kind) {
             case 'none':
                 // The "headers-only" mode is also the upsell surface — most
-                // people see this panel first (it's the default). The Nivoli
-                // pitch leads with FULL-PAGE EDGE CACHING (the real product),
-                // not tag purge (which is what the addon already does). Uses
-                // multiple accent colors to break up the all-blue feel of
-                // earlier versions.
+                // people see this panel first (it's the default). The pitch
+                // leads with FULL-PAGE HTML CACHING (Nivoli's actual
+                // product), not tag purge (which is what the addon already
+                // does without the upsell).
+                //
+                // v2.4.11 trim: previous version was hero + 4-pill right
+                // column + dual 404/5xx hero cards + CTA — roughly 700px
+                // tall, dense enough to overwhelm. Now: hero + 3-pill row +
+                // CTA, ~350px. Same dark-gradient design language, half the
+                // height. The killer ops features (404 mgmt, 5xx triage)
+                // are folded into the third pill rather than getting their
+                // own row.
                 $body = '<p style="margin:0 0 18px;color:#334155;font-size:14px;line-height:1.6">'
-                      . 'Pages keep emitting <code>Surrogate-Key</code> + <code>Cache-Tag</code> headers — '
-                      . 'your edge cache reads them. The addon just doesn\'t fire purges; whatever wires up '
-                      . 'your cache handles invalidation. Good fit for Varnish/VCL setups, evaluators kicking '
-                      . 'the tires, or "headers first, purges later" rollouts.</p>'
+                      . 'Pages keep emitting <code>Surrogate-Key</code> headers — your edge reads them. '
+                      . 'The addon just doesn\'t fire purges; whatever wires up your cache handles invalidation. '
+                      . 'Good fit for Varnish/VCL setups or "headers first, purges later" rollouts.</p>'
 
-                      . '<div style="background:linear-gradient(135deg,#1e1b4b 0%,#7c3aed 55%,#db2777 100%);color:white;border-radius:10px;margin-top:18px;overflow:hidden;box-shadow:0 6px 24px rgba(124,58,237,0.22)">'
-
-                      // ---- Top row: hero (left) + secondary differentiators (right) ----
-                      // Side-by-side on wide screens; stacks on narrow. Uses the
-                      // horizontal space that the hero copy alone leaves blank.
-                      . '<div style="display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:0;border-bottom:1px solid rgba(255,255,255,0.14)">'
-
-                      // Hero (left) — lead with the contradiction.
-                      . '<div style="padding:26px 28px 22px">'
-                      . '<div style="font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#fbbf24;margin-bottom:10px">⚡ Full-page HTML caching on Cloudflare</div>'
-                      . '<h3 style="margin:0 0 12px;color:white;font-size:24px;font-weight:700;line-height:1.2;letter-spacing:-0.015em">Cloudflare doesn\'t cache HTML.<br><span style="color:#fbbf24">Nivoli does.</span></h3>'
-                      . '<p style="margin:0 0 10px;font-size:14.5px;line-height:1.62;opacity:0.95">'
-                      . 'Out of the box, Cloudflare caches your CSS, JS, and images at the edge — but every HTML pageview still round-trips to your origin server. '
-                      . '<strong>Nivoli adds the missing layer:</strong> full-page HTML caching on Cloudflare\'s global network. '
-                      . 'Every visitor hits Cloudflare; only <strong style="color:#fbbf24">cache MISSes touch origin</strong>.</p>'
-                      . '<p style="margin:0;font-size:14px;line-height:1.6;opacity:0.92">'
-                      . '<strong>And it stays correct.</strong> When an editor saves an entry in EE, this addon fires tag purge — only the pages that show that entry refresh, never the whole cache. '
-                      . 'Speed <em>and</em> consistency.</p>'
-                      . '</div>'
-
-                      // Right column — secondary differentiators. Vertical
-                      // stack, compact. Stale-on-error added as the
-                      // reliability angle the all-blue version was missing.
-                      . '<div style="padding:22px 24px 18px;background:rgba(0,0,0,0.20);border-left:1px solid rgba(255,255,255,0.10);display:flex;flex-direction:column;gap:10px">'
-
-                      . '<div style="background:rgba(52,211,153,0.14);border:1px solid rgba(52,211,153,0.38);padding:11px 14px;border-radius:7px;font-size:12.5px;line-height:1.5">'
-                      .   '<strong style="color:#6ee7b7;display:block;margin-bottom:3px;font-size:13px">🛡 Attack blackholing</strong>'
-                      .   '<span style="opacity:0.88">.env / .git / wp-admin / xmlrpc probes return 404 at the edge. Origin never sees them.</span>'
-                      . '</div>'
-
-                      . '<div style="background:rgba(192,132,252,0.16);border:1px solid rgba(192,132,252,0.42);padding:11px 14px;border-radius:7px;font-size:12.5px;line-height:1.5">'
-                      .   '<strong style="color:#d8b4fe;display:block;margin-bottom:3px;font-size:13px">⏱ Stale-on-error fallback</strong>'
-                      .   '<span style="opacity:0.88">Origin down? Cached copies keep serving visitors for up to 7 days. Your site stays up while you fix the backend.</span>'
-                      . '</div>'
-
-                      . '<div style="background:rgba(96,165,250,0.16);border:1px solid rgba(96,165,250,0.42);padding:11px 14px;border-radius:7px;font-size:12.5px;line-height:1.5">'
-                      .   '<strong style="color:#93c5fd;display:block;margin-bottom:3px;font-size:13px">📢 Deploy alerts</strong>'
-                      .   '<span style="opacity:0.88">Webhook on 5xx storms (broken release) or mass-404 spikes (deleted route).</span>'
-                      . '</div>'
-
-                      . '<div style="background:rgba(244,114,182,0.14);border:1px solid rgba(244,114,182,0.38);padding:11px 14px;border-radius:7px;font-size:12.5px;line-height:1.5">'
-                      .   '<strong style="color:#f9a8d4;display:block;margin-bottom:3px;font-size:13px">↻ URL rules</strong>'
-                      .   '<span style="opacity:0.88">Redirect old URLs / block specific patterns at the edge — never round-trip to origin.</span>'
-                      . '</div>'
-
-                      . '</div>'
-                      . '</div>'
-
-                      // Featured: 404 / 5xx dashboards — these are the
-                      // killer ops features. Full-width pair below the hero.
-                      . '<div style="padding:22px 28px 18px;background:rgba(0,0,0,0.16)">'
-                      . '<div style="font-size:11px;font-weight:700;letter-spacing:0.10em;text-transform:uppercase;opacity:0.78;margin-bottom:14px">Operational dashboards that ship with the cache</div>'
-                      . '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">'
-
-                      // 404 management
-                      . '<div style="background:rgba(251,191,36,0.14);border:1px solid rgba(251,191,36,0.45);padding:14px 16px;border-radius:8px;line-height:1.5">'
-                      .   '<div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#fcd34d;margin-bottom:6px">⚠ 404 management</div>'
-                      .   '<strong style="color:white;display:block;font-size:14.5px;margin-bottom:4px">Every broken URL on your site, on one screen</strong>'
-                      .   '<span style="font-size:13px;opacity:0.88">Live 404 traffic clustered by pattern. Smart redirect suggestions matched against your top pages. One-click blackhole for bot probes. Test sandbox for new rules before they ship.</span>'
-                      . '</div>'
-
-                      // 5xx triage
-                      . '<div style="background:rgba(248,113,113,0.14);border:1px solid rgba(248,113,113,0.45);padding:14px 16px;border-radius:8px;line-height:1.5">'
-                      .   '<div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#fca5a5;margin-bottom:6px">🔥 5xx triage</div>'
-                      .   '<strong style="color:white;display:block;font-size:14.5px;margin-bottom:4px">Origin failures, captured and clustered</strong>'
-                      .   '<span style="font-size:13px;opacity:0.88">Status-code breakdown per host. Captured origin response bodies. Top error URLs sorted by hit rate. Block patterns that should never reach origin — like emoji-laden bot URIs that crash your PHP.</span>'
-                      . '</div>'
-
-                      . '</div></div>'
-
-                      // CTA
-                      . '<div style="padding:22px 28px;background:rgba(0,0,0,0.32);display:flex;align-items:center;gap:18px;flex-wrap:wrap">'
-                      . '<a href="https://console.nivoli.com/signup" target="_blank" rel="noopener" '
-                      . 'style="background:#fbbf24;color:#1e1b4b !important;padding:13px 30px;border-radius:7px;text-decoration:none;font-weight:700;font-size:15px;letter-spacing:-0.01em;box-shadow:0 2px 12px rgba(251,191,36,0.40)">Start free →</a>'
-                      . '<div style="font-size:13px;opacity:0.95;line-height:1.55">'
-                      .   '<strong style="color:#34d399">Free tier:</strong> 1 domain, ~100k req/mo. '
-                      .   '<strong style="color:#93c5fd">No credit card.</strong> '
-                      .   '<strong style="color:#fcd34d">~90 seconds</strong> from signup to first cached page.<br>'
-                      .   '<span style="opacity:0.72;font-size:12px">Nivoli\'s edge runs on top of Cloudflare\'s free tier — same global POPs you already trust.</span>'
-                      . '</div>'
-                      . '</div>'
-
-                      . '</div>';
+                      . self::renderNivoliPitch();
                 break;
             case 'nivoli':
                 // Description + URL field. The live stats widget that used
