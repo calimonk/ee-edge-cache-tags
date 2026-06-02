@@ -23,7 +23,7 @@ return array(
     'author_url'  => 'https://github.com/calimonk/ee-edge-cache-tags',
     'name'        => 'Edge Cache',
     'description' => 'Full-page HTML caching at the edge with surgical tag-based purge. Make every visitor hit Cloudflare, Fastly, Varnish, or Nivoli — not your origin. When an entry changes, only the pages featuring it refresh; never the whole cache.',
-    'version'     => '2.4.17',
+    'version'     => '2.4.18',
     'namespace'   => 'EdgeCacheTags',
     'settings_exist' => true,
 

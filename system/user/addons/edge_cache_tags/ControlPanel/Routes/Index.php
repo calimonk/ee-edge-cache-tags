@@ -398,11 +398,16 @@ class Index extends AbstractRoute
         // collapsed. One outbound fetch per CP request, memoized in
         // fetchNivoliStats(). Fails silently if endpoint unreachable.
         $statsHero = '';
+        $hostScopeBanner = '';
         if ($effBackend === 'nivoli') {
             $effEndpoint = $overrides['nivoli_endpoint'] ?? ($r['nivoli_endpoint'] ?? '');
             if ($effEndpoint !== '') {
                 $stats = $this->fetchNivoliStats($effEndpoint);
                 if ($stats) $statsHero = $this->renderNivoliStatsWidget($stats);
+                // v2.4.18: surface the token's host scope so a misconfig
+                // (wrong dashboard URL pasted) is obvious at render time
+                // rather than diagnosed via empty stats / failing purges.
+                $hostScopeBanner = $this->renderHostScopeBanner($effEndpoint);
             }
         }
 
@@ -552,6 +557,8 @@ class Index extends AbstractRoute
 
 <section class="ect-tab-panel active" data-panel="setup">
   {$statsHero}
+
+  {$hostScopeBanner}
 
   {$toolsBlock}
 
@@ -1390,6 +1397,120 @@ HTML;
         $host = parse_url($site_url, PHP_URL_HOST);
         if (!$host) return '';
         return rawurlencode(strtolower($host));
+    }
+
+    /**
+     * Return the current MSM site's host (unencoded, lowercased).
+     * Empty string when undetermined.
+     */
+    private function currentSiteHost(): string
+    {
+        $site_url = (string) ee()->config->item('site_url');
+        if ($site_url === '') return '';
+        $host = parse_url($site_url, PHP_URL_HOST);
+        return $host ? strtolower($host) : '';
+    }
+
+    /**
+     * Fetch the list of hostnames the dashboard token grants access to.
+     * Returns array<string> or null on any failure. Cached per-request
+     * via a static (same lifetime as the stats cache).
+     *
+     * Nivoli exposes /cache/<token>/hostnames as a no-auth-required
+     * endpoint that just returns the token's allowedHosts set. Used
+     * here to detect "wrong dashboard URL pasted" misconfig — the
+     * exact mistake the operator just hit: pasted a token whose scope
+     * didn't include the current EE site's host.
+     */
+    private static $hostnames_cache = null;
+    private static $hostnames_cache_key = null;
+    private function fetchNivoliHostnames(string $endpoint): ?array
+    {
+        if (!$endpoint) return null;
+        if (self::$hostnames_cache_key === $endpoint && self::$hostnames_cache !== null) {
+            return self::$hostnames_cache ?: null;
+        }
+        $url = rtrim($endpoint, '/') . '/hostnames';
+        $ch = curl_init($url);
+        if (!$ch) return null;
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 3,
+            CURLOPT_CONNECTTIMEOUT => 2,
+            CURLOPT_FAILONERROR    => false,
+            CURLOPT_USERAGENT      => 'edge-cache-tags-ee-cp/' . $this->installedVersion(),
+        ]);
+        $body = @curl_exec($ch);
+        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        $hosts = null;
+        if ($status === 200 && is_string($body)) {
+            $parsed = json_decode($body, true);
+            if (is_array($parsed) && isset($parsed['hostnames']) && is_array($parsed['hostnames'])) {
+                $hosts = array_values(array_filter(array_map(
+                    fn($h) => strtolower((string) $h),
+                    $parsed['hostnames']
+                )));
+            }
+        }
+        self::$hostnames_cache = $hosts ?: [];
+        self::$hostnames_cache_key = $endpoint;
+        return $hosts;
+    }
+
+    /**
+     * Render a small banner showing which hostnames the configured
+     * Nivoli dashboard URL is scoped to, plus a ✓ / ⚠ check that the
+     * current EE site is in that scope.
+     *
+     * Three render states:
+     *   - Fetch failed (network blip, bad token): empty string, no banner
+     *   - Current site IS in scope: small green confirmation
+     *   - Current site is NOT in scope: prominent amber warning with
+     *     remediation steps
+     */
+    private function renderHostScopeBanner(string $endpoint): string
+    {
+        $hosts = $this->fetchNivoliHostnames($endpoint);
+        if (!$hosts) return ''; // unreachable / bad URL — fail quiet, stats hero will also be empty
+        $h = fn($v) => htmlspecialchars((string) $v);
+        $currentHost = $this->currentSiteHost();
+        $inScope = $currentHost !== '' && in_array($currentHost, $hosts, true);
+
+        $listHtml = '';
+        foreach ($hosts as $hn) {
+            $isCurrent = ($hn === $currentHost);
+            $listHtml .= '<code style="background:' . ($isCurrent ? '#dcfce7' : '#f1f5f9')
+                . ';color:' . ($isCurrent ? '#166534' : '#475569')
+                . ';padding:2px 8px;border-radius:4px;font-size:12.5px;margin-right:6px;font-weight:' . ($isCurrent ? '600' : '400') . '">'
+                . $h($hn) . ($isCurrent ? ' (this site)' : '') . '</code>';
+        }
+
+        if ($inScope) {
+            // Quiet confirmation — small, green, doesn't dominate.
+            return '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:7px;padding:10px 14px;margin-bottom:14px;font-size:13px;line-height:1.55">'
+                . '<span style="color:#166534;font-weight:600">✓ Dashboard URL scope ·</span> '
+                . '<span style="color:#15803d;margin-right:8px">' . count($hosts) . ' hostname' . (count($hosts) === 1 ? '' : 's') . ' linked:</span>'
+                . $listHtml
+                . '</div>';
+        }
+
+        // Mismatch — loud warning + explain remedy.
+        $currentLabel = $currentHost !== '' ? $currentHost : '(unknown — site_url not set)';
+        return '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:7px;padding:14px 18px;margin-bottom:14px;font-size:13.5px;line-height:1.6">'
+            . '<div style="font-weight:700;color:#92400e;margin-bottom:6px">⚠ Dashboard URL host-scope mismatch</div>'
+            . '<p style="margin:0 0 8px;color:#78350f">'
+            . 'This token grants access to '
+            . '<strong>' . count($hosts) . ' hostname' . (count($hosts) === 1 ? '' : 's') . '</strong>'
+            . ' — but this site (<strong>' . $h($currentLabel) . '</strong>) isn\'t one of them.'
+            . '</p>'
+            . '<p style="margin:0 0 8px;color:#78350f">Linked: ' . $listHtml . '</p>'
+            . '<p style="margin:0;color:#78350f;font-size:12.5px">'
+            . 'Saves on this site will fire purges that Nivoli rejects with 403 (host not in scope). Stats hero above will stay empty. Two fixes:<br>'
+            . '<strong>(a)</strong> Paste this site\'s OWN dashboard URL into the Setup form below (each tenant gets its own URL), OR<br>'
+            . '<strong>(b)</strong> Link this site to the existing token via the Nivoli admin → Hosts → Link to token.'
+            . '</p>'
+            . '</div>';
     }
 
     /**
