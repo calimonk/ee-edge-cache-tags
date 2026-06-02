@@ -915,7 +915,7 @@ HTML;
             . '<p class="sub" style="margin:6px 0 14px">What the addon would do on this site right now.</p>'
             . $rowsHtml
             . '<h3 style="margin:18px 0 4px;font-size:14px">Sample tags this site would emit</h3>'
-            . '<p class="sub" style="margin:0 0 6px">Keys are space-separated in the <code>Surrogate-Key</code> header and comma-separated in <code>Cache-Tag</code>.</p>'
+            . '<p class="sub" style="margin:0 0 6px">Keys are emitted in the <code>Surrogate-Key</code> header (space-separated). The matching <code>Cache-Tag</code> header (comma-separated) is added <em>only</em> when the backend is set to <code>cloudflare</code> — that\'s the only edge that reads it.</p>'
             . '<div class="ect-sample">' . $sampleRows . '</div>'
             . '</div>';
     }
@@ -1275,7 +1275,7 @@ HTML;
         // own channel short_name.
         $emittedExample = $code([
             '<span style="color:#94a3b8">Surrogate-Key:</span> <span style="color:#7dd3fc">path-articles</span> <span style="color:#fcd34d">entry-123</span> <span style="color:#fcd34d">channel-articles</span> <span style="color:#fcd34d">category-9</span> <span style="color:#86efac">all</span>',
-            '<span style="color:#94a3b8">Cache-Tag:</span>     <span style="color:#7dd3fc">path-articles</span>,<span style="color:#fcd34d">entry-123</span>,<span style="color:#fcd34d">channel-articles</span>,<span style="color:#fcd34d">category-9</span>,<span style="color:#86efac">all</span>',
+            '<span style="color:#94a3b8">Cache-Tag:</span>     <span style="color:#7dd3fc">path-articles</span>,<span style="color:#fcd34d">entry-123</span>,<span style="color:#fcd34d">channel-articles</span>,<span style="color:#fcd34d">category-9</span>,<span style="color:#86efac">all</span>  <span style="color:#64748b">// only emitted when backend = cloudflare</span>',
         ]);
 
         $singleEntryExample = $code([

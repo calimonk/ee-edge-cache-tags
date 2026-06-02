@@ -35,7 +35,7 @@ if (!defined('BASEPATH')) { exit('No direct script access allowed'); }
 
 class Edge_cache_tags_ext {
 
-    public $version = '2.4.9';
+    public $version = '2.4.10';
 
     const MAX_KEYS    = 50;
     const MAX_KEY_LEN = 64;
@@ -168,14 +168,23 @@ class Edge_cache_tags_ext {
 
         $keys = $this->keys_for_request();
         if (!empty($keys)) {
-            // Emit BOTH headers. Fastly/Varnish/Nivoli read Surrogate-Key
-            // (space-separated); Cloudflare Enterprise reads Cache-Tag
-            // (comma-separated). Harmless duplication when one cache is
-            // in the path and the other isn't.
+            // Surrogate-Key is the universal contract — Fastly, Varnish,
+            // Nivoli, Akamai, Bunny and most custom edges all read it.
+            // Always emit.
+            //
+            // Cache-Tag is Cloudflare Enterprise's proprietary header
+            // and ONLY useful when CF Enterprise's purge API is the
+            // backend. Pre-v2.4.10 we always emitted it as a defensive
+            // measure, which meant every non-CF-Enterprise user paid
+            // ~60 bytes/response for a header nothing in their pipeline
+            // reads. v2.4.10 ties it to the configured backend.
             $sk = 'Surrogate-Key: ' . implode(' ', $keys);
-            $ct = 'Cache-Tag: '    . implode(',', $keys);
+            $emit_cache_tag = ($this->backend() === 'cloudflare');
+            $ct = $emit_cache_tag ? ('Cache-Tag: ' . implode(',', $keys)) : null;
+
             ee()->output->set_header($sk);
-            ee()->output->set_header($ct);
+            if ($ct !== null) ee()->output->set_header($ct);
+
             // v2.4.8 fallback: also emit via plain header(). On some EE
             // installs (CI Output overrides, FastCGI peculiarities, custom
             // template-cache fast paths) the ee()->output buffer is
@@ -189,7 +198,7 @@ class Edge_cache_tags_ext {
             // wild on a customer deployment.
             if (!headers_sent()) {
                 @header($sk);
-                @header($ct);
+                if ($ct !== null) @header($ct);
             }
             // Trace-only marker so an operator can prove via curl which
             // path is delivering. If X-Edge-Cache-Tags-Direct shows up in
@@ -198,7 +207,7 @@ class Edge_cache_tags_ext {
             // version (because v2.4.8 also emits Surrogate-Key/Cache-Tag
             // via header() now).
             if ($trace) {
-                @header('X-Edge-Cache-Tags-Direct: ran keys=' . count($keys));
+                @header('X-Edge-Cache-Tags-Direct: ran keys=' . count($keys) . ' cache_tag=' . ($emit_cache_tag ? 'on' : 'off'));
             }
         }
         if ($trace) {
