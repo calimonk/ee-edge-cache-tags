@@ -546,6 +546,7 @@ class Index extends AbstractRoute
 <nav class="ect-tabs" role="tablist" aria-label="Edge Cache Tags sections">
   <button type="button" class="ect-tab active" data-tab="setup" role="tab" aria-selected="true">Setup</button>
   <button type="button" class="ect-tab" data-tab="status" role="tab" aria-selected="false">Status{$diagBadge}</button>
+  <button type="button" class="ect-tab" data-tab="activity" role="tab" aria-selected="false">Activity</button>
   <button type="button" class="ect-tab" data-tab="docs" role="tab" aria-selected="false">Documentation</button>
 </nav>
 
@@ -582,6 +583,9 @@ class Index extends AbstractRoute
   {$versionBanner}
   {$diagBlock}
   {$configProbeBlock}
+</section>
+
+<section class="ect-tab-panel" data-panel="activity">
   {$activityBlock}
 </section>
 

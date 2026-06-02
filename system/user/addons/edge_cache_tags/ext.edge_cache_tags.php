@@ -35,7 +35,7 @@ if (!defined('BASEPATH')) { exit('No direct script access allowed'); }
 
 class Edge_cache_tags_ext {
 
-    public $version = '2.4.12';
+    public $version = '2.4.13';
 
     const MAX_KEYS    = 50;
     const MAX_KEY_LEN = 64;
@@ -116,7 +116,7 @@ class Edge_cache_tags_ext {
     public function cp_custom_menu($menu) {
         if (!defined('REQ') || REQ !== 'CP') return true;
         try {
-            $menu->addItem('Edge Cache Tags',
+            $menu->addItem('Edge Cache',
                 ee('CP/URL')->make('addons/settings/edge_cache_tags/index'));
         } catch (\Throwable $e) { /* don't break the CP on render error */ }
     }

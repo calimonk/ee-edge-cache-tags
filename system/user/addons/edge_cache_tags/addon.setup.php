@@ -21,9 +21,9 @@
 return array(
     'author'      => 'Edge Cache Tags',
     'author_url'  => 'https://github.com/calimonk/ee-edge-cache-tags',
-    'name'        => 'Edge Cache Tags',
-    'description' => 'Surrogate-Key + Cache-Tag tagging and tag-based purge dispatch (Fastly, Cloudflare Enterprise, Nivoli, generic webhook, or headers-only).',
-    'version'     => '2.4.12',
+    'name'        => 'Edge Cache',
+    'description' => 'Full-page HTML caching at the edge with surgical tag-based purge. Make every visitor hit Cloudflare, Fastly, Varnish, or Nivoli — not your origin. When an entry changes, only the pages featuring it refresh; never the whole cache.',
+    'version'     => '2.4.13',
     'namespace'   => 'EdgeCacheTags',
     'settings_exist' => true,
 

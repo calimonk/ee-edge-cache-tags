@@ -64,7 +64,7 @@ class Edge_cache_tags_upd extends Installer
         $row = ee()->db->where('module_name', 'Edge_cache_tags')
             ->get('modules')->row_array();
         $payload = [
-            'module_version'     => '2.4.12',
+            'module_version'     => '2.4.13',
             'has_cp_backend'     => 'y',
             'has_publish_fields' => 'n',
         ];
@@ -95,6 +95,16 @@ class Edge_cache_tags_upd extends Installer
             'data' => 'Edge_cache_tags_ext',
         ])->update('menu_items', ['data' => 'edge_cache_tags']);
 
+        // v2.4.13: rename the sidebar label from "Edge Cache Tags" to
+        // "Edge Cache" — matches the new manifest name + the WP plugin's
+        // top-level menu label. Skipped via WHERE so an operator who
+        // manually customized the label keeps theirs.
+        ee()->db->where([
+            'type' => 'addon',
+            'data' => 'edge_cache_tags',
+            'name' => 'Edge Cache Tags',
+        ])->update('menu_items', ['name' => 'Edge Cache']);
+
         $exists = (int) ee()->db->where([
             'type' => 'addon',
             'data' => 'edge_cache_tags',
@@ -103,7 +113,7 @@ class Edge_cache_tags_upd extends Installer
         ee()->db->insert('menu_items', [
             'parent_id' => 0,
             'set_id'    => 1,
-            'name'      => 'Edge Cache Tags',
+            'name'      => 'Edge Cache',
             'data'      => 'edge_cache_tags',
             'type'      => 'addon',
             'sort'      => 100,
