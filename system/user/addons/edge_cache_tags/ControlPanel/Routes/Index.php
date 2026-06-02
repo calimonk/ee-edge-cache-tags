@@ -424,6 +424,7 @@ class Index extends AbstractRoute
             : 'Backend: ' . ucfirst($effBackend) . ' · click to edit';
         $configBlocks = $this->renderBackendConfigBlocks($r, $overrides, $effBackend);
         $diagBlock = $this->renderDiagBlock($diag);
+        $versionBanner = $this->renderVersionCheck();
         $configProbeBlock = $this->renderConfigProbe();
         $activityBlock = $this->renderActivityBlock($siteId);
         $toolsBlock = $this->renderToolsBlock($diag['effective'], $action);
@@ -578,6 +579,7 @@ class Index extends AbstractRoute
 </section>
 
 <section class="ect-tab-panel" data-panel="status">
+  {$versionBanner}
   {$diagBlock}
   {$configProbeBlock}
   {$activityBlock}
@@ -915,6 +917,107 @@ HTML;
      * Each row links to the corresponding form field so an operator can
      * scroll back to the lock detail box for the exact field.
      */
+    /**
+     * "New version available" banner — checks the GitHub releases API
+     * for a tag newer than the installed addon version. Cached 12h via
+     * a file under system/user/cache/. EE doesn't have a native add-on
+     * update mechanism (the way WordPress.org does for plugins), so this
+     * surfaces the existence of a newer release with a link to the
+     * release page; the operator still does the file-drop manually.
+     *
+     * Quiet by design: only emits markup when an upgrade is genuinely
+     * available. No notice on up-to-date installs, no error if the
+     * GitHub fetch fails — the panel just doesn't show.
+     */
+    private function renderVersionCheck(): string
+    {
+        $latest = $this->fetchLatestRelease();
+        if (!$latest || empty($latest['tag'])) return '';
+        $installed = $this->installedVersion();
+        if (!$installed) return '';
+        if (version_compare($latest['tag'], $installed, '<=')) return '';
+        $h = fn($v) => htmlspecialchars((string) $v);
+        $body = isset($latest['body']) ? trim((string) $latest['body']) : '';
+        // Trim release notes to first ~600 chars in the banner — the
+        // operator clicks through for the full notes.
+        $excerpt = $body !== '' ? (strlen($body) > 600 ? substr($body, 0, 597) . '…' : $body) : '';
+        return '<div class="ect-card" style="border-left:4px solid #f59e0b;background:linear-gradient(90deg,#fffbeb,#ffffff 50%)">'
+            . '<div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap">'
+            . '<div style="flex:1;min-width:280px">'
+            . '<h2 style="display:inline-block;margin:0 8px 0 0">⬆ Update available</h2>'
+            . '<span style="background:#f59e0b;color:#fff;padding:2px 8px;border-radius:4px;font-size:11.5px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase">v' . $h($latest['tag']) . '</span>'
+            . '<p class="sub" style="margin:6px 0 8px">You\'re on v' . $h($installed) . '. Latest GitHub release is v' . $h($latest['tag']) . '.</p>'
+            . ($excerpt ? '<details style="font-size:12.5px;color:#475569"><summary style="cursor:pointer;font-weight:600;color:#1e293b;margin-bottom:6px">Release notes</summary><pre style="white-space:pre-wrap;font-family:inherit;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;margin:6px 0 0;max-height:300px;overflow-y:auto">' . $h($excerpt) . '</pre></details>' : '')
+            . '</div>'
+            . '<div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;font-size:12px">'
+            . '<a href="' . $h($latest['html']) . '" target="_blank" rel="noopener" class="ect-btn" style="background:#f59e0b">View on GitHub →</a>'
+            . '<span style="color:#94a3b8">Manual file drop — EE has no auto-install</span>'
+            . '</div>'
+            . '</div>'
+            . '</div>';
+    }
+
+    /** Current version from addon.setup.php — single source of truth. */
+    private function installedVersion(): string
+    {
+        $manifest = include SYSPATH . 'user/addons/edge_cache_tags/addon.setup.php';
+        return is_array($manifest) ? (string) ($manifest['version'] ?? '') : '';
+    }
+
+    /**
+     * Fetch the latest GitHub release. Cached 12h via a flat file under
+     * system/user/cache/. Returns null on failure (no banner shown on
+     * network errors — quiet by design).
+     */
+    private function fetchLatestRelease(): ?array
+    {
+        $repo = 'calimonk/ee-edge-cache-tags';
+        $cacheDir = SYSPATH . 'user/cache/edge_cache_tags';
+        $cacheFile = $cacheDir . '/latest_release.json';
+        $ttl = 12 * 3600; // 12 hours
+
+        if (is_file($cacheFile) && (time() - filemtime($cacheFile)) < $ttl) {
+            $cached = @file_get_contents($cacheFile);
+            $decoded = $cached !== false ? json_decode($cached, true) : null;
+            if (is_array($decoded)) {
+                return isset($decoded['_empty']) ? null : $decoded;
+            }
+        }
+
+        $url = 'https://api.github.com/repos/' . $repo . '/releases/latest';
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 4,
+            CURLOPT_USERAGENT      => 'edge-cache-tags-ee-cp/' . $this->installedVersion(),
+            CURLOPT_HTTPHEADER     => ['Accept: application/vnd.github.v3+json'],
+        ]);
+        $resp = curl_exec($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        $data = null;
+        if ($code === 200 && is_string($resp) && $resp !== '') {
+            $decoded = json_decode($resp, true);
+            if (is_array($decoded) && !empty($decoded['tag_name'])) {
+                $data = [
+                    'tag'       => ltrim((string) $decoded['tag_name'], 'v'),
+                    'name'      => $decoded['name']         ?? $decoded['tag_name'],
+                    'body'      => $decoded['body']         ?? '',
+                    'html'      => $decoded['html_url']     ?? '',
+                    'published' => $decoded['published_at'] ?? '',
+                ];
+            }
+        }
+
+        // Best-effort write to the cache directory. Sentinel value when
+        // the fetch fails so we don't hammer GitHub on every CP load.
+        if (!is_dir($cacheDir)) { @mkdir($cacheDir, 0775, true); }
+        @file_put_contents($cacheFile, json_encode($data ?: ['_empty' => time()]));
+
+        return $data;
+    }
+
     private function renderConfigProbe(): string
     {
         $h = fn($v) => htmlspecialchars((string) $v);
