@@ -427,7 +427,7 @@ class Index extends AbstractRoute
         $versionBanner = $this->renderVersionCheck();
         $configProbeBlock = $this->renderConfigProbe();
         $activityBlock = $this->renderActivityBlock($siteId);
-        $toolsBlock = $this->renderToolsBlock($diag['effective'], $action);
+        $toolsBlock = $this->renderToolsBlock($diag['effective'], $action, $siteId);
         $docsBlock = $this->renderDocsBlock();
 
         // Tab badges. Status tab shows a green tick if all diag checks
@@ -1186,7 +1186,7 @@ HTML;
      * Edge_cache_tags_ext::manual_purge_tags(), and the result lands
      * in the Recent activity log below.
      */
-    private function renderToolsBlock(array $eff, string $action): string
+    private function renderToolsBlock(array $eff, string $action, int $siteId): string
     {
         $h = fn($v) => htmlspecialchars((string) $v);
         $backend = $eff['backend'] ?: 'none';
@@ -1210,9 +1210,15 @@ HTML;
         // configured. When backend=none, render disabled with an
         // explanatory hint.
         $disabled = ($backend === 'none');
+        // v2.4.16: dropped `all` from the casual suggestion list. It
+        // looks innocuous next to `home` and `channel-news` but actually
+        // nukes the entire network's cache (every MSM site for an
+        // MSM install). Operators who want "wipe everything" should use
+        // the explicit danger button below, not type `all` into the
+        // free-form field.
         $hint = $disabled
             ? '<span style="color:#b45309;font-weight:500">Pick a backend above before this form can dispatch.</span>'
-            : 'Space- or comma-separated. Common tags: <code>home</code>, <code>all</code>, <code>channel-news</code>, <code>entry-123</code>.';
+            : 'Space- or comma-separated. Common: <code>home</code>, <code>channel-news</code>, <code>entry-123</code>, <code>category-9</code>, <code>path-news</code>. For "purge everything" use the danger buttons below.';
         $btnAttr = $disabled ? 'disabled' : '';
         $btnStyle = $disabled
             ? 'background:#cbd5e1;color:#64748b !important;padding:9px 22px;border-radius:6px;border:0;font-weight:600;font-size:13px;cursor:not-allowed'
@@ -1226,13 +1232,96 @@ HTML;
             . '</form>'
             . '<div style="font-size:12.5px;color:#64748b;line-height:1.5">' . $hint . '</div>';
 
+        // ---- Danger zone: site-wide and network-wide nukes -------------
+        //
+        // Confirmation prompts use onsubmit so a misclick on the button
+        // doesn't immediately fire the purge. Pages will rebuild on
+        // next request — no data loss — but cache hit rate temporarily
+        // tanks. Worth a moment of friction.
+        //
+        // MSM topology:
+        //   - site_id  == 1 → emits unprefixed tags. "all" is the only
+        //                     scope available, which IS the whole site
+        //                     (and on an MSM install also the master).
+        //                     We render just ONE button labeled
+        //                     accordingly.
+        //   - site_id   > 1 → emits `site-<id>-` prefixed tags AND an
+        //                     unprefixed `all` (network nuke from sub-
+        //                     sites). Two buttons: per-site + network.
+        $dangerZone = '';
+        if (!$disabled) {
+            if ($siteId > 1) {
+                $thisSiteTag = 'site-' . $siteId . '-all';
+                $thisSiteLabel = 'Purge this site\'s cache (site #' . $siteId . ')';
+                $thisSiteConfirm = 'Purge EVERY cached page for this site (site #' . $siteId . ')? '
+                    . 'Other MSM sites are not affected. Pages will rebuild on next request — '
+                    . 'cache hit rate temporarily drops to 0% for this site. Continue?';
+
+                $networkConfirm = 'Purge EVERY cached page across ALL MSM sites in the network? '
+                    . 'This wipes the cache for every site that shares this EE install. '
+                    . 'Every site\'s hit rate drops to 0% until the cache rebuilds. Are you sure?';
+
+                $dangerZone = '<div style="margin-top:18px;padding:14px 16px;background:#fef2f2;border:1px solid #fecaca;border-radius:7px">'
+                    . '<h3 style="margin:0 0 4px;font-size:14px;color:#991b1b">⚠ Danger zone</h3>'
+                    . '<p style="margin:0 0 12px;font-size:12.5px;color:#7f1d1d;line-height:1.5">'
+                    .   'Site-wide and network-wide nukes. Use sparingly — they wipe everything and force the edge to rebuild the cache from origin.'
+                    . '</p>'
+                    . '<div style="display:flex;gap:10px;flex-wrap:wrap">'
+                    .   $this->dangerButton($action, $thisSiteTag, $thisSiteLabel, $thisSiteConfirm, '#b45309')
+                    .   $this->dangerButton($action, 'all', 'Purge ALL sites (network)', $networkConfirm, '#991b1b')
+                    . '</div>'
+                    . '</div>';
+            } else {
+                // site_id == 1 — single-site install OR the MSM master.
+                // In both cases the only nuke tag is unprefixed `all`,
+                // which IS the whole site (or the whole network if MSM
+                // is active and the master also serves traffic).
+                $confirm = 'Purge EVERY cached page? Pages will rebuild on next request — '
+                    . 'cache hit rate temporarily drops to 0% until the cache refills. Continue?';
+                $dangerZone = '<div style="margin-top:18px;padding:14px 16px;background:#fef2f2;border:1px solid #fecaca;border-radius:7px">'
+                    . '<h3 style="margin:0 0 4px;font-size:14px;color:#991b1b">⚠ Danger zone</h3>'
+                    . '<p style="margin:0 0 12px;font-size:12.5px;color:#7f1d1d;line-height:1.5">'
+                    .   'Site-wide nuke. Use sparingly — wipes everything and forces the edge to rebuild the cache from origin.'
+                    . '</p>'
+                    . '<div>'
+                    .   $this->dangerButton($action, 'all', 'Purge entire cache', $confirm, '#991b1b')
+                    . '</div>'
+                    . '</div>';
+            }
+        }
+
         return '<div class="ect-card">'
             . '<h2 style="margin:0 0 4px">Quick actions</h2>'
             . '<p class="sub" style="margin:0 0 16px;color:#64748b">Manual purges when you change something outside an entry save (template edit, asset update, fix to a hand-rolled URL).</p>'
             . $dashboardBlock
             . '<h3 style="margin:0 0 8px;font-size:14px;color:#1e293b">Purge tags manually</h3>'
             . $purgeForm
+            . $dangerZone
             . '</div>';
+    }
+
+    /**
+     * Build a single danger-button form. Each is its own <form> so the
+     * tag is baked in at render time (no JS-set values that could be
+     * tampered with). Confirmation via onsubmit so a misclick doesn't
+     * immediately nuke.
+     */
+    private function dangerButton(string $action, string $tag, string $label, string $confirm, string $color): string
+    {
+        $h = fn($v) => htmlspecialchars((string) $v);
+        // Single-quote the JS confirm string + escape single quotes
+        // and newlines safely. ENT_QUOTES on the htmlspecialchars
+        // would double-escape; use addslashes + htmlspecialchars in
+        // sequence so the rendered attribute is clean.
+        $js = addslashes($confirm);
+        return '<form method="POST" action="' . $h($action) . '" style="margin:0" '
+            . 'onsubmit="return confirm(\'' . $h($js) . '\');">'
+            . '<input type="hidden" name="ect_action" value="purge_tags">'
+            . '<input type="hidden" name="purge_tags_input" value="' . $h($tag) . '">'
+            . '<button type="submit" style="background:' . $color . ';color:white;padding:9px 18px;border-radius:6px;border:0;font-weight:600;font-size:12.5px;cursor:pointer;letter-spacing:-0.01em">'
+            . $h($label) . ' <span style="opacity:0.75;font-weight:500;font-family:ui-monospace,Menlo,monospace">(' . $h($tag) . ')</span>'
+            . '</button>'
+            . '</form>';
     }
 
     /**
