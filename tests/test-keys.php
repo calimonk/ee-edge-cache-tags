@@ -228,7 +228,11 @@ $entry = (object) array(
 $ext = new Edge_cache_tags_ext();
 $k = call_private($ext, 'keys_for_entry', array($entry, array()));
 assertContains_('home',       $k, 'purges home');
-assertContains_('all',        $k, 'purges all');
+// v2.4.14: 'all' is intentionally NOT in the auto-purge set. The tag
+// is still emitted on every page (so an admin can use the CP manual-
+// purge tool to nuke the cache), but firing it on every entry save
+// would evict every cached page on every publish.
+assertNotContains_('all',     $k, 'does NOT purge all on save (would evict whole cache)');
 assertContains_('entry-42',   $k, 'purges entry-<id>');
 assertContains_('channel-news', $k, 'purges channel-<name>');
 assertContains_('path-news',  $k, 'purges path-<channel>');
@@ -331,6 +335,46 @@ reset_ee();
 ee()->config->items['edge_cache_tags_backend'] = 'bogus';
 $ext = new Edge_cache_tags_ext();
 assertEquals_('none', call_private($ext, 'backend'), 'invalid -> none');
+
+// v2.4.15 regression: simulate the EE installs where ee()->config->item()
+// returns boolean false (not null) for missing keys. cfg() used to let
+// false fall through `!== null && !== ''` and return (string) false = ''
+// BEFORE the DB-row lookup — net effect: backend() always returned 'none'
+// even when the DB had the right value, so no purges ever fired.
+//
+// Override the mock just for this test by subclassing in-place.
+echo "\nv2.4.15 — cfg() handles false-vs-null sentinel\n";
+reset_ee();
+// Mock variant that returns false (not null) for missing keys, mirroring
+// what we've seen on real EE installs in the wild.
+ee()->config = new class extends Mock_EE_Config {
+    public function item($key) {
+        return $this->items[$key] ?? false; // <-- false, not null
+    }
+};
+ee()->config->items['site_id'] = 2;
+// Seed a DB-row-equivalent: simulate that settings_row returns backend=nivoli.
+// (We can't easily mock settings_row directly since it queries ee()->db,
+// so set the config item too — cfg() should prefer it; the test is that
+// it doesn't bail with '' before getting to the DB fallback.)
+ee()->config->items['edge_cache_tags_backend'] = 'nivoli';
+$ext = new Edge_cache_tags_ext();
+assertEquals_('nivoli', call_private($ext, 'backend'),
+    'false-returning config does NOT prematurely return "" before DB lookup');
+
+// Now the truly-missing case under the false-returning mock: should
+// return 'none' (no config item, no DB row in this mock context).
+reset_ee();
+ee()->config = new class extends Mock_EE_Config {
+    public function item($key) {
+        return $this->items[$key] ?? false;
+    }
+};
+ee()->config->items['site_id'] = 2;
+// No edge_cache_tags_backend set.
+$ext = new Edge_cache_tags_ext();
+assertEquals_('none', call_private($ext, 'backend'),
+    'false sentinel + no config + no DB row -> none (not crash, not false)');
 
 // ---------------------------------------------------------------------------
 

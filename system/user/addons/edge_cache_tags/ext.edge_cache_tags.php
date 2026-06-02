@@ -35,7 +35,7 @@ if (!defined('BASEPATH')) { exit('No direct script access allowed'); }
 
 class Edge_cache_tags_ext {
 
-    public $version = '2.4.14';
+    public $version = '2.4.15';
 
     const MAX_KEYS    = 50;
     const MAX_KEY_LEN = 64;
@@ -85,13 +85,33 @@ class Edge_cache_tags_ext {
         return $row;
     }
 
-    /** Resolve a setting key, config.php first then DB then default. */
+    /**
+     * Resolve a setting key, config.php first then DB then default.
+     *
+     * v2.4.15 critical fix: cast-first-then-empty-check rather than
+     * `$val !== null && $val !== ''`. On some EE installs,
+     * ee()->config->item() returns boolean false for missing keys
+     * instead of null. The old `!==` check let false fall through,
+     * then (string)false = '' was returned BEFORE the DB-row lookup
+     * could see the actual stored value.
+     *
+     * Net effect on affected installs: backend() always returned
+     * 'none', auto-purges silently bailed in flush(), no log entries
+     * were ever written, manual purge errored with 'Backend is none'
+     * — even when the CP form clearly showed Nivoli configured and
+     * the DB row had backend='nivoli'. Headers still emitted (that's
+     * a separate code path) so the addon looked installed at the
+     * surface but did zero work below the surface.
+     *
+     * Mirrors the WP-side fix in v2.4.3's configOverrides().
+     */
     private function cfg($key, $dbKey = null) {
         $val = ee()->config->item('edge_cache_tags_' . $key);
-        if ($val !== null && $val !== '') return (string) $val;
+        $valStr = trim((string) ($val ?? ''));
+        if ($valStr !== '') return $valStr;
         $row = $this->settings_row();
         $col = $dbKey ?: $key;
-        if (isset($row[$col]) && $row[$col] !== '') return (string) $row[$col];
+        if (isset($row[$col]) && trim((string) $row[$col]) !== '') return (string) $row[$col];
         return '';
     }
 
