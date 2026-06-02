@@ -1495,7 +1495,7 @@ HTML;
   Now the page is tagged <code>entry-N channel-articles author-jane topic-pricing topic-eu</code>. Purging <code>author-jane</code> evicts every article page bylined to her AND any author listing that featured her — in one call.
 </p>
 <p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
-  <strong>Triggering the purge:</strong> the addon\'s built-in auto-purge only fires the standard tags on entry save (<code>entry-N</code>, <code>channel-X</code>, <code>category-Y</code>, <code>home</code>, <code>all</code>). For custom taxonomies, dispatch via the <strong>Quick actions</strong> panel on the Setup tab when you change them, or call <code>Edge_cache_tags_ext::manual_purge_tags([\'author-jane\'])</code> from a custom EE extension hooked into <code>after_channel_entry_save</code>.
+  <strong>Triggering the purge:</strong> the addon\'s built-in auto-purge only fires the standard tags on entry save (<code>entry-N</code>, <code>channel-X</code>, <code>path-X</code>, <code>category-Y</code>, <code>home</code>). For custom taxonomies, dispatch via the <strong>Quick actions</strong> panel on the Setup tab when you change them, or call <code>Edge_cache_tags_ext::manual_purge_tags([\'author-jane\'])</code> from a custom EE extension hooked into <code>after_channel_entry_save</code>. (Notably absent: <code>all</code> — that tag emits on every page so you can nuke the cache via the manual purge form, but auto-firing it on every save would evict every cached page on every entry change.)
 </p>
 
 <h4 style="margin:14px 0 4px;font-size:13.5px;font-weight:600;color:#1e293b">How do I configure different settings per MSM site in config.php?</h4>
@@ -1584,7 +1584,8 @@ $assign_to_config[\'edge_cache_tags_cf_api_token\'] = \'...\';</pre>
   <li><code>home</code> — the homepage (entries often appear there)</li>
   <li>MSM site_id &gt; 1: all the above prefixed with <code>site-&lt;id&gt;-</code> for isolation</li>
 </ul>
-<p>Multiple saves in the same CP request coalesce into <strong>one</strong> POST per backend. Fire-and-forget with a 5-second timeout — a slow edge never blocks a CP save.</p>
+<p><strong>Notably NOT auto-purged: <code>all</code></strong>. Every page still emits the <code>all</code> tag so you can manually nuke the cache via the <strong>Quick actions</strong> panel — but firing it on every entry save would evict every cached page on every save, defeating the surgical-purge premise. Same goes for the MSM-scoped <code>site-&lt;id&gt;-all</code> tag.</p>
+<p>Multiple saves in the same CP request coalesce into <strong>one</strong> POST per backend. Bounded 5-second timeout — a slow edge never blocks a CP save for long.</p>
 
 <h3>config.php overrides (developers / config-as-code)</h3>
 <p style="margin-bottom:10px">All form settings can be pinned via <code>system/user/config/config.php</code>. Pinned values win over the CP form (the 🔒 lock indicator on the field shows you which). Pick whichever backend you\'re actually using:</p>

@@ -35,7 +35,7 @@ if (!defined('BASEPATH')) { exit('No direct script access allowed'); }
 
 class Edge_cache_tags_ext {
 
-    public $version = '2.4.13';
+    public $version = '2.4.14';
 
     const MAX_KEYS    = 50;
     const MAX_KEY_LEN = 64;
@@ -303,7 +303,21 @@ class Edge_cache_tags_ext {
     }
 
     private function keys_for_entry($entry, $values) {
-        $keys = array('home', 'all');
+        // v2.4.14 — DELIBERATELY does NOT include 'all'.
+        //
+        // 'all' lives on every emitted page (see keys_for_request) so an
+        // admin can use the CP's manual purge tool to nuke the entire
+        // cache with one tag. But firing 'all' on EVERY entry save would
+        // evict every cached page on the site on every publish — turns
+        // surgical tag-purge into "purge the whole edge whenever any
+        // editor saves anything," which is exactly the failure mode
+        // tag-based caching is supposed to avoid.
+        //
+        // No filter in EE for the per-entry tag list (yet), but you can
+        // call Edge_cache_tags_ext::manual_purge_tags(['all']) from a
+        // custom hook into after_channel_entry_save if you genuinely
+        // want nuke-on-save behavior.
+        $keys = array('home');
 
         $entry_id = null;
         if (is_object($entry) && isset($entry->entry_id)) { $entry_id = $entry->entry_id; }
