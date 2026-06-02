@@ -35,7 +35,7 @@ if (!defined('BASEPATH')) { exit('No direct script access allowed'); }
 
 class Edge_cache_tags_ext {
 
-    public $version = '2.4.16';
+    public $version = '2.4.17';
 
     const MAX_KEYS    = 50;
     const MAX_KEY_LEN = 64;
@@ -448,14 +448,42 @@ class Edge_cache_tags_ext {
 
     // ---- Drivers ---------------------------------------------------------
 
-    /** POST {tags:[...]} to <dashboard>/purge-tag. */
+    /**
+     * POST {tags:[...]} to <dashboard>/purge-tag?host=<current-site-host>.
+     *
+     * The `?host=` parameter scopes the purge to a specific hostname when
+     * the dashboard token is "linked" across multiple MSM hostnames on
+     * the Nivoli side (one token, several sites under the same account).
+     * Without it Nivoli defaults to the FIRST hostname in the linked set
+     * — which means a save on MSM site B sends its purge to site A's
+     * cache, and site B's cache never invalidates.
+     *
+     * Single-tenant tokens ignore `?host=` (the param is allowed-list-
+     * validated server-side; a single-host token just matches the only
+     * entry). So it's safe to always emit.
+     */
     private function purge_nivoli($tags) {
         $url = $this->cfg('nivoli_endpoint');
         if (!$url) { return; }
-        $url = rtrim($url, '/') . '/purge-tag';
+        $url = rtrim($url, '/') . '/purge-tag' . $this->nivoli_host_qs();
         $this->send_post($url, json_encode(array('tags' => array_values($tags))),
             array('Content-Type: application/json'),
             array('backend' => 'nivoli', 'tags' => $tags));
+    }
+
+    /**
+     * Build `?host=<host>` from EE's site_url for the current MSM site.
+     * Empty string if the host can't be determined (some early-boot
+     * paths) — caller's URL stays as-is and Nivoli falls back to the
+     * first linked host.
+     */
+    private function nivoli_host_qs() {
+        if (!function_exists('ee') || !isset(ee()->config)) return '';
+        $site_url = (string) ee()->config->item('site_url');
+        if ($site_url === '') return '';
+        $host = parse_url($site_url, PHP_URL_HOST);
+        if (!$host || $host === '') return '';
+        return '?host=' . rawurlencode(strtolower($host));
     }
 
     /**

@@ -1336,10 +1336,22 @@ HTML;
     private function fetchNivoliStats(string $endpoint): ?array
     {
         if (!$endpoint) return null;
-        if (self::$stats_cache_key === $endpoint && self::$stats_cache !== null) {
+        // v2.4.17: cache key now includes the current MSM site's host so
+        // a single linked Nivoli token (one dashboard URL, multiple
+        // hostnames) returns the right per-site stats. Without this the
+        // CP for rpggamers shows platformgamers's stats (or vice versa)
+        // because the per-request stats_cache static was keyed only on
+        // the endpoint, and the endpoint is identical across linked
+        // sites.
+        $hostQs = $this->nivoliHostQs();
+        $cacheKey = $endpoint . '|' . $hostQs;
+        if (self::$stats_cache_key === $cacheKey && self::$stats_cache !== null) {
             return self::$stats_cache ?: null;
         }
-        $url = rtrim($endpoint, '/') . '/stats?hours=720'; // 30d window
+        // ?host=<current-site-host> tells Nivoli which hostname to
+        // resolve stats for when the token grants access to multiple.
+        // Single-host tokens just ignore the param.
+        $url = rtrim($endpoint, '/') . '/stats?hours=720' . ($hostQs ? '&host=' . $hostQs : '');
         $ch = curl_init($url);
         if (!$ch) return null;
         curl_setopt_array($ch, [
@@ -1358,8 +1370,26 @@ HTML;
             if (is_array($parsed)) $data = $parsed;
         }
         self::$stats_cache = $data ?: [];
-        self::$stats_cache_key = $endpoint;
+        self::$stats_cache_key = $cacheKey;
         return $data;
+    }
+
+    /**
+     * Return `<host>` (raw, not URL-encoded) for the current MSM site,
+     * derived from EE's site_url. Empty string if undetermined. Caller
+     * decides whether to wrap in `?host=<...>` or `&host=<...>`.
+     *
+     * Mirrors purge_nivoli's nivoli_host_qs() in the extension class;
+     * keeping them in sync (rather than calling across class
+     * boundaries) avoids a require_once at CP-render time.
+     */
+    private function nivoliHostQs(): string
+    {
+        $site_url = (string) ee()->config->item('site_url');
+        if ($site_url === '') return '';
+        $host = parse_url($site_url, PHP_URL_HOST);
+        if (!$host) return '';
+        return rawurlencode(strtolower($host));
     }
 
     /**
