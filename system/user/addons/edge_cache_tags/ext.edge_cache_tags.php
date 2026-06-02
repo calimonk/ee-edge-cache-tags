@@ -6,10 +6,10 @@
  * Responsibilities:
  *   1. template_post_parse: emit Surrogate-Key + Cache-Tag headers
  *      describing the page. Keys come from two sources, merged:
- *        - Auto: URI-segment + template-group/template tags
- *          (e.g. path-news, tmpl-news-index).
+ *        - Auto: URI-segment tag (e.g. path-news), plus `all` and the
+ *          conditional `home` tag on the front controller.
  *        - Explicit: anything templates pushed via {exp:edge_cache_tags:key}
- *          (stored in session cache by pi.edge_cache_tags.php),
+ *          (stored in session cache by mod.edge_cache_tags.php),
  *          typically entry-level keys like entry-123 / channel-news /
  *          category-9.
  *   2. after_channel_entry_save / delete: enqueue affected keys; flush
@@ -35,7 +35,7 @@ if (!defined('BASEPATH')) { exit('No direct script access allowed'); }
 
 class Edge_cache_tags_ext {
 
-    public $version = '2.4.8';
+    public $version = '2.4.9';
 
     const MAX_KEYS    = 50;
     const MAX_KEY_LEN = 64;
@@ -251,13 +251,18 @@ class Edge_cache_tags_ext {
             if (!empty($segs[0])) { $keys[] = 'path-' . $this->slug($segs[0]); }
         }
 
-        if (isset(ee()->TMPL) && is_object(ee()->TMPL)) {
-            $tg = isset(ee()->TMPL->group_name) ? ee()->TMPL->group_name : null;
-            $tn = isset(ee()->TMPL->template_name) ? ee()->TMPL->template_name : null;
-            if ($tg) {
-                $keys[] = 'tmpl-' . $this->slug($tg) . ($tn ? '-' . $this->slug($tn) : '');
-            }
-        }
+        // v2.4.9: dropped the tmpl-<group>-<template> auto-tag. It read
+        // ee()->TMPL->{group_name,template_name} at emission time, but
+        // template_post_parse fires multiple times per page (URL template,
+        // embeds, layout) — by the final emit pass the TMPL state reflects
+        // the LAYOUT, not the URL-resolved template. The resulting tag
+        // (e.g. tmpl-layouts-_html-wrapper) was emitted on every page,
+        // making it functionally equivalent to `all`. Other tags (entry-N,
+        // channel-X, path-Y, category-Z, home, all) cover the realistic
+        // purge use cases; if a user genuinely wants "purge all pages
+        // rendered by template X" they can push an explicit
+        // {exp:edge_cache_tags:key name="tmpl-X"} at the top of the
+        // template itself.
 
         // Explicit keys pushed by {exp:edge_cache_tags:key}.
         $explicit = ee()->session->cache('edge_cache_tags', 'keys');

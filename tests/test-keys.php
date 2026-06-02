@@ -169,7 +169,13 @@ assertContains_('path-news', $k, 'path-<first-segment>');
 assertContains_('all',       $k, 'all');
 assertNotContains_('home',   $k, 'no home on deep URI');
 
-echo "\nTMPL group + template name -> tmpl-<group>-<template>\n";
+// v2.4.9: tmpl-<group>-<template> was dropped from auto-emit. The tag
+// captured the LAST template parsed (typically the layout) not the
+// URL-resolved template, making it useless as a surgical purge target.
+// keys_for_request() no longer emits any tmpl-* tag — operators who
+// genuinely want one can push it explicitly via the {exp:edge_cache_tags:key}
+// template tag.
+echo "\nTMPL group + template name NO LONGER emitted (v2.4.9)\n";
 reset_ee();
 ee()->uri->uri = 'news';
 ee()->TMPL = new Mock_EE_Tmpl();
@@ -177,7 +183,7 @@ ee()->TMPL->group_name = 'news';
 ee()->TMPL->template_name = 'index';
 $ext = new Edge_cache_tags_ext();
 $k = call_private($ext, 'keys_for_request');
-assertContains_('tmpl-news-index', $k, 'tmpl-<group>-<template>');
+assertNotContains_('tmpl-news-index', $k, 'tmpl-<group>-<template> NOT auto-emitted');
 
 echo "\nExplicit keys from {exp:edge_cache_tags:key}\n";
 reset_ee();

@@ -1274,8 +1274,8 @@ HTML;
         // events, products, or anything else. Replace mentally with your
         // own channel short_name.
         $emittedExample = $code([
-            '<span style="color:#94a3b8">Surrogate-Key:</span> <span style="color:#7dd3fc">tmpl-articles-index</span> <span style="color:#7dd3fc">path-articles</span> <span style="color:#fcd34d">entry-123</span> <span style="color:#fcd34d">channel-articles</span> <span style="color:#fcd34d">category-9</span> <span style="color:#86efac">all</span>',
-            '<span style="color:#94a3b8">Cache-Tag:</span>     <span style="color:#7dd3fc">tmpl-articles-index</span>,<span style="color:#7dd3fc">path-articles</span>,<span style="color:#fcd34d">entry-123</span>,<span style="color:#fcd34d">channel-articles</span>,<span style="color:#fcd34d">category-9</span>,<span style="color:#86efac">all</span>',
+            '<span style="color:#94a3b8">Surrogate-Key:</span> <span style="color:#7dd3fc">path-articles</span> <span style="color:#fcd34d">entry-123</span> <span style="color:#fcd34d">channel-articles</span> <span style="color:#fcd34d">category-9</span> <span style="color:#86efac">all</span>',
+            '<span style="color:#94a3b8">Cache-Tag:</span>     <span style="color:#7dd3fc">path-articles</span>,<span style="color:#fcd34d">entry-123</span>,<span style="color:#fcd34d">channel-articles</span>,<span style="color:#fcd34d">category-9</span>,<span style="color:#86efac">all</span>',
         ]);
 
         $singleEntryExample = $code([
@@ -1337,12 +1337,12 @@ HTML;
 <p>The addon already auto-tags from the URI and template context:</p>
 ' . $emittedExample . '
 <ul style="margin-top:12px">
-  <li><code>tmpl-&lt;group&gt;-&lt;template&gt;</code> — which template rendered (e.g. <code>tmpl-news-index</code>)</li>
   <li><code>path-&lt;first-segment&gt;</code> — first URL segment (e.g. <code>path-news</code> for /news/anything)</li>
   <li><code>all</code> — every page carries this; lets an admin nuke everything with one tag</li>
   <li><code>home</code> — only on the homepage / front controller</li>
   <li>MSM site_id &gt; 1: all keys above prefixed with <code>site-&lt;id&gt;-</code>, plus an unprefixed <code>all</code></li>
 </ul>
+<p style="margin-top:10px;font-size:12.5px;color:#94a3b8;line-height:1.6"><em>Note: there\'s no auto-emitted "rendered by template X" tag. EE\'s template_post_parse fires multiple times per page (URL template → embeds → layout), so any auto-captured value reflected the last-parsed template (usually the layout) — too broad to be useful. If you want a template-scoped tag, push it explicitly with <code>{exp:edge_cache_tags:key name="tmpl-news-listing"}</code> at the top of the relevant template.</em></p>
 <p style="margin-top:10px"><strong>What\'s missing:</strong> the addon can\'t know which <em>entries</em> are on a page from outside the template — that\'s why you add the next step.</p>
 
 <h3>What YOU add to your templates</h3>
