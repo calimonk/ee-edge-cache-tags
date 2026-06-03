@@ -1639,16 +1639,18 @@ HTML;
      * totals. Returns empty string when there's nothing to display
      * (no traffic + no purges across all windows) so the caller can
      * fall back to the single-window legacy widget.
+     *
+     * v2.4.23 — restyled to match the customer dashboard's TRAFFIC
+     * pattern: top "ORIGIN OFFLOAD" green callout (30d bandwidth +
+     * requests offloaded + offload %), cleaner cards with hit rate as
+     * the colored headline, semantic colors for hit-rate tiers and
+     * error rate.
      */
     private function renderMultiStatsHero(array $multi, array $purgeWin): string
     {
         $windows = $multi['windows'] ?? [];
         if (empty($windows)) return '';
 
-        // Decide if we have anything worth rendering at all. If every
-        // window is empty AND the purge log is empty, return '' so the
-        // caller falls back to the legacy widget (which itself bails
-        // when totalRequests is zero) or hides the hero entirely.
         $anyTraffic = false; $anyPurges = false;
         foreach (['6h','24h','7d','30d'] as $k) {
             if ((int) ($windows[$k]['requests'] ?? 0) > 0) { $anyTraffic = true; }
@@ -1665,13 +1667,61 @@ HTML;
         $fmtPct = function ($v): string {
             if ($v === null) return '—';
             if ($v < 1)  return number_format((float) $v, 2) . '%';
-            return number_format((float) $v, 1) . '%';
+            if ($v < 10) return number_format((float) $v, 1) . '%';
+            return (int) round((float) $v) . '%';
         };
         $fmtMs = function ($ms): string {
             if ($ms === null || $ms <= 0) return '—';
             if ($ms < 1000) return (int) round($ms) . ' ms';
             return number_format($ms / 1000, 2) . ' s';
         };
+        // Bytes → [number, unit] tuple.
+        $fmtBytes = function ($b): array {
+            $b = (float) $b;
+            if ($b >= 1024 * 1024 * 1024) return [number_format($b / 1073741824, 1), 'GB'];
+            if ($b >= 1024 * 1024)        return [number_format($b / 1048576, 1),    'MB'];
+            if ($b >= 1024)               return [number_format($b / 1024, 1),       'kB'];
+            return [(string) (int) $b, 'B'];
+        };
+        // Hit-rate color tier: 70+ green, 40-70 yellow, <40 red.
+        $hitColor = function ($pct): string {
+            if ($pct === null)  return '#484f58';  // muted
+            if ($pct >= 70)     return '#3fb950';  // good
+            if ($pct >= 40)     return '#d29922';  // mid
+            return '#f85149';                       // low
+        };
+        $errColor = function ($pct): string {
+            if ($pct === null || $pct < 1) return '#e6edf3';
+            if ($pct < 5) return '#d29922';
+            return '#f85149';
+        };
+
+        // ORIGIN OFFLOAD callout — green-bordered top card mirroring the
+        // customer dashboard's "ORIGIN OFFLOAD — WORK THE CACHE DID FOR
+        // YOU" section. Only rendered when 30d has real traffic.
+        $offloadHtml = '';
+        $w30 = $windows['30d'] ?? null;
+        if ($w30 && (int) $w30['requests'] > 0) {
+            $cachedBytes = (float) ($w30['cachedBytes']         ?? 0);
+            $hits30      = (int)   ($w30['hits']                ?? 0);
+            $offloadPct  =          $w30['requestOffloadPct']   ?? null;
+            [$bwNum, $bwUnit] = $fmtBytes($cachedBytes);
+            $cellStyle = 'min-width:0';
+            $numStyleG = 'font-size:28px;font-weight:700;line-height:1.1;color:#3fb950;display:flex;align-items:baseline;gap:6px';
+            $numStyleB = str_replace('#3fb950', '#58a6ff', $numStyleG);
+            $unitStyle = 'font-size:18px;color:#8b949e;font-weight:600';
+            $subStyle  = 'font-size:11.5px;color:#8b949e;margin-top:3px;line-height:1.4';
+            $offloadHtml = '<div style="background:linear-gradient(135deg,rgba(63,185,80,0.06) 0%,rgba(45,212,191,0.03) 100%);border:1px solid #2ea043;border-radius:8px;padding:14px 18px 16px;margin-bottom:14px">'
+                . '<div style="font-size:10.5px;font-weight:700;letter-spacing:0.10em;text-transform:uppercase;color:#3fb950;margin-bottom:10px;display:flex;align-items:center;gap:10px">'
+                . '<span>Origin offload — work the cache did for you</span>'
+                . '<span style="color:#8b949e;font-weight:500;letter-spacing:0.05em;text-transform:none;font-size:10.5px;margin-left:auto">last 30 days</span>'
+                . '</div>'
+                . '<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px" class="ect-offload-grid">'
+                . '<div style="' . $cellStyle . '"><div style="' . $numStyleG . '">' . htmlspecialchars($bwNum) . ' <span style="' . $unitStyle . '">' . htmlspecialchars($bwUnit) . '</span></div><div style="' . $subStyle . '">bandwidth served from cache</div></div>'
+                . '<div style="' . $cellStyle . '"><div style="' . $numStyleG . '">' . htmlspecialchars($fmtNum($hits30)) . '</div><div style="' . $subStyle . '">requests your origin never saw</div></div>'
+                . '<div style="' . $cellStyle . '"><div style="' . $numStyleB . '">' . htmlspecialchars($fmtPct($offloadPct)) . '</div><div style="' . $subStyle . '">of requests offloaded</div></div>'
+                . '</div></div>';
+        }
 
         $order = [
             ['key' => '6h',  'label' => '6 hours',  'current' => true],
@@ -1680,13 +1730,11 @@ HTML;
             ['key' => '30d', 'label' => '30 days',  'current' => false],
         ];
 
-        // One stat-row cell. Inline-styled to survive EE's CP HTML pipeline.
-        $stat = function (string $label, string $value, bool $muted) {
-            $valueStyle = 'font-size:17px;font-weight:700;line-height:1.2' .
-                ($muted ? ';opacity:0.45;font-weight:500;font-size:14px' : '');
-            return '<div style="margin-bottom:6px">'
-                . '<div style="font-size:10px;opacity:0.65;text-transform:uppercase;letter-spacing:0.05em;line-height:1.3">' . htmlspecialchars($label) . '</div>'
-                . '<div style="' . $valueStyle . '">' . htmlspecialchars($value) . '</div>'
+        // Per-card row helper (lbl ... val on baseline, with optional color).
+        $row = function (string $lbl, string $val, string $valColor = '#e6edf3') {
+            return '<div style="display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;font-size:12.5px">'
+                . '<span style="color:#8b949e">' . htmlspecialchars($lbl) . '</span>'
+                . '<span style="color:' . $valColor . ';font-weight:600;font-variant-numeric:tabular-nums">' . htmlspecialchars($val) . '</span>'
                 . '</div>';
         };
 
@@ -1701,52 +1749,65 @@ HTML;
             $purges = (int) ($purgeWin[$w['key']]['purges'] ?? 0);
             $tags   = (int) ($purgeWin[$w['key']]['tags']   ?? 0);
 
-            $bgStyle = $w['current']
-                ? 'background:rgba(110,231,183,0.10);border:1px solid rgba(110,231,183,0.30);box-shadow:inset 0 0 0 1px rgba(110,231,183,0.10)'
-                : 'background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08)';
-            $titleColor = $w['current'] ? '#a7f3d0' : '#6ee7b7';
+            $cardStyle = 'background:#161b22;border:1px solid #21262d;border-radius:7px;padding:14px 16px 12px';
+            if ($w['current']) {
+                $cardStyle = 'background:#161b22;border:1px solid #3fb950;border-radius:7px;padding:14px 16px 12px;box-shadow:0 0 0 1px rgba(63,185,80,0.18)';
+            }
+            $titleColor = $w['current'] ? '#3fb950' : '#8b949e';
+            $hCol = $hitColor($hit);
 
-            $winHtml .= '<div style="' . $bgStyle . ';border-radius:6px;padding:12px 14px 10px">'
-                . '<div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:' . $titleColor . ';margin-bottom:10px">' . htmlspecialchars($w['label']) . '</div>'
-                . $stat('Hit rate',     $hasTraffic ? $fmtPct($hit)  : '—', !$hasTraffic)
-                . $stat('Requests',     $hasTraffic ? $fmtNum($req)  : '—', !$hasTraffic)
-                . $stat('Avg response', $hasTraffic ? $fmtMs($resp)  : '—', !$hasTraffic)
-                . $stat('Error rate',   $hasTraffic ? $fmtPct($erp)  : '—', !$hasTraffic)
-                . '<div style="height:1px;background:rgba(255,255,255,0.08);margin:9px 0"></div>'
-                . $stat('Purges fired', $fmtNum($purges), $purges === 0)
-                . $stat('Tags evicted', $fmtNum($tags),   $tags === 0)
+            $cardInner = '<div style="font-size:10.5px;font-weight:700;letter-spacing:0.10em;text-transform:uppercase;color:' . $titleColor . ';margin-bottom:6px">' . htmlspecialchars($w['label']) . '</div>';
+
+            if ($hasTraffic) {
+                $cardInner .= '<div style="font-size:30px;font-weight:700;line-height:1;margin-bottom:1px;letter-spacing:-0.02em;color:' . $hCol . '">' . htmlspecialchars($fmtPct($hit)) . '</div>'
+                    . '<div style="font-size:11px;color:#8b949e;margin-bottom:12px">hit rate · ' . htmlspecialchars($fmtNum($req)) . ' req</div>'
+                    . $row('Avg response', $fmtMs($resp))
+                    . $row('Error rate',   $fmtPct($erp), $errColor($erp));
+            } else {
+                $cardInner .= '<div style="font-size:18px;font-weight:600;line-height:1;color:#484f58;letter-spacing:-0.02em">—</div>'
+                    . '<div style="font-size:11px;color:#484f58;margin:6px 0 4px;line-height:1.5;padding:14px 0 4px">No edge traffic in this window yet.</div>';
+            }
+
+            // Purge row — always rendered (zero is informative).
+            $pCol = $purges > 0 ? '#e6edf3' : '#484f58';
+            $tagSpan = $tags > 0
+                ? ' <span style="font-weight:500;color:#8b949e">· ' . htmlspecialchars($fmtNum($tags)) . ' tags</span>'
+                : '';
+            $cardInner .= '<div style="margin-top:10px;padding-top:9px;border-top:1px solid #21262d;font-size:11.5px;color:#8b949e;display:flex;justify-content:space-between">'
+                . '<span>Purges fired</span>'
+                . '<span style="color:' . $pCol . ';font-weight:600;font-variant-numeric:tabular-nums">' . htmlspecialchars($fmtNum($purges)) . $tagSpan . '</span>'
                 . '</div>';
+
+            $winHtml .= '<div style="' . $cardStyle . '">' . $cardInner . '</div>';
         }
 
         // Concrete, non-speculative footer.
-        $tags30  = (int) ($purgeWin['30d']['tags']   ?? 0);
+        $tags30   = (int) ($purgeWin['30d']['tags']   ?? 0);
         $purges30 = (int) ($purgeWin['30d']['purges'] ?? 0);
         $footer = '';
         if ($purges30 > 0) {
-            $footer = '<div style="margin-top:14px;font-size:12px;color:rgba(255,255,255,0.62);line-height:1.55;border-top:1px solid rgba(255,255,255,0.08);padding-top:11px">'
-                . '<strong style="color:#a7f3d0;font-weight:600">' . htmlspecialchars($fmtNum($tags30)) . '</strong> cache entries refreshed promptly via '
-                . '<strong style="color:#a7f3d0;font-weight:600">' . htmlspecialchars($fmtNum($purges30)) . '</strong> surgical purges over the last 30 days. '
+            $footer = '<div style="margin-top:14px;font-size:12px;color:#8b949e;line-height:1.55;border-top:1px solid #21262d;padding-top:11px">'
+                . '<strong style="color:#3fb950;font-weight:600">' . htmlspecialchars($fmtNum($tags30)) . '</strong> cache entries refreshed promptly via '
+                . '<strong style="color:#3fb950;font-weight:600">' . htmlspecialchars($fmtNum($purges30)) . '</strong> surgical purges over the last 30 days. '
                 . 'No whole-cache nukes — only the pages featuring changed content were evicted.';
             if (!empty($purgeWin['capHit'])) {
-                $footer .= ' <span style="opacity:0.55">(Log capped at 500 dispatches per site — older 30d purges may not be counted.)</span>';
+                $footer .= ' <span style="opacity:0.55">(Activity log capped at 500 dispatches per site — older 30d purges may not be counted.)</span>';
             }
             $footer .= '</div>';
         }
 
-        return '<div style="background:linear-gradient(135deg,#064e3b 0%,#0b3d52 60%,#134e63 100%);color:#fff;padding:18px 20px 16px;border-radius:8px;margin-bottom:16px;box-shadow:0 3px 12px rgba(6,95,70,0.18)">'
-            . '<div style="font-size:11.5px;font-weight:700;letter-spacing:0.10em;text-transform:uppercase;color:#6ee7b7;margin:0 0 14px;display:flex;align-items:center;gap:10px">'
+        return '<div style="background:#0d1117;color:#e6edf3;padding:18px 20px 16px;border-radius:8px;margin-bottom:16px;border:1px solid #21262d">'
+            . '<div style="font-size:11.5px;font-weight:700;letter-spacing:0.10em;text-transform:uppercase;color:#3fb950;margin:0 0 14px;display:flex;align-items:center;gap:10px">'
             . '<span>📊 Your cache performance</span>'
-            . '<span style="color:rgba(255,255,255,0.55);font-weight:500;font-size:10.5px;letter-spacing:0.05em;text-transform:none;margin-left:auto">windows ending now · Nivoli backend</span>'
+            . '<span style="color:#8b949e;font-weight:500;font-size:11px;letter-spacing:0.05em;text-transform:none;margin-left:auto">windows ending now · Nivoli backend</span>'
             . '</div>'
-            . '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px" class="ect-multi-wins">'
+            . $offloadHtml
+            . '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px" class="ect-multi-wins">'
             . $winHtml
             . '</div>'
             . $footer
             . '</div>'
-            // Responsive fallback — EE's CP doesn't have a tight media-query
-            // shell. Inject a small inline style so the 4-col grid collapses
-            // on narrower viewports rather than overflowing.
-            . '<style>@media (max-width:980px){.ect-multi-wins{grid-template-columns:repeat(2,minmax(0,1fr))!important}}@media (max-width:520px){.ect-multi-wins{grid-template-columns:1fr!important}}</style>';
+            . '<style>@media (max-width:980px){.ect-multi-wins{grid-template-columns:repeat(2,minmax(0,1fr))!important}.ect-offload-grid{grid-template-columns:1fr!important;gap:12px!important}}@media (max-width:520px){.ect-multi-wins{grid-template-columns:1fr!important}}</style>';
     }
 
     private function renderNivoliStatsWidget(array $stats): string
