@@ -43,6 +43,7 @@ class Mock_EE {
     public $session;
     public $output;
     public $extensions;
+    public $db;
     public $headers_set = array();
 
     public function __construct() {
@@ -53,6 +54,7 @@ class Mock_EE {
         $this->session    = new Mock_EE_Session();
         $this->extensions = new Mock_EE_Extensions();
         $this->output     = new Mock_EE_Output($this);
+        $this->db         = new Mock_EE_DB();
     }
 }
 class Mock_EE_Config {
@@ -83,6 +85,41 @@ class Mock_EE_Output {
 }
 class Mock_EE_Extensions {
     public $last_call = false;
+}
+
+/**
+ * Tiny chainable mock of EE's DB layer, just enough to satisfy
+ * `select(...)->where(...)->get(...)->row_array()` and `->result_array()`
+ * — the only chain shapes used by channel_name_for() / category_ids_for()
+ * in v2.4.19. Tables are seeded as array-of-rows via `$db->seed($table, $rows)`.
+ */
+class Mock_EE_DB {
+    public $tables = array();
+    private $_select_cols = null;
+    private $_where = array();
+    public function seed($table, $rows) {
+        $this->tables[$table] = $rows;
+    }
+    public function table_exists($t) { return array_key_exists($t, $this->tables); }
+    public function select($cols)    { $this->_select_cols = $cols; return $this; }
+    public function where($col, $v)  { $this->_where[$col] = $v; return $this; }
+    public function get($table) {
+        $rows = $this->tables[$table] ?? array();
+        foreach ($this->_where as $c => $v) {
+            $rows = array_values(array_filter($rows, function ($r) use ($c, $v) {
+                return isset($r[$c]) && (string) $r[$c] === (string) $v;
+            }));
+        }
+        $this->_select_cols = null;
+        $this->_where = array();
+        return new Mock_EE_DB_Result($rows);
+    }
+}
+class Mock_EE_DB_Result {
+    private $rows;
+    public function __construct($rows) { $this->rows = $rows; }
+    public function row_array()    { return $this->rows[0] ?? array(); }
+    public function result_array() { return $this->rows; }
 }
 
 $EE = new Mock_EE();
@@ -136,6 +173,13 @@ function reset_ee() {
     global $EE;
     $EE = new Mock_EE();
     $EE->config->items['site_id'] = 1;
+    // Clear v2.4.19 channel-name request cache between tests.
+    $r = new ReflectionClass('Edge_cache_tags_ext');
+    if ($r->hasProperty('channel_name_cache')) {
+        $p = $r->getProperty('channel_name_cache');
+        $p->setAccessible(true);
+        $p->setValue(null, array());
+    }
 }
 
 // Use reflection to invoke a private method on the extension.
@@ -211,43 +255,61 @@ assertContains_('all',         $k, 'network-wide all also present');
 
 echo "\n\n\033[1mEdge Cache Tags (EE) — purge derivation\033[0m\n\n";
 
-echo "keys_for_entry(entry_id=42, channel=news, categories=[3,9])\n";
+// v2.4.19 — keys_for_entry resolves channel_name from channel_id via
+// the channels DB lookup (NOT via the model's lazy-loaded ->Channel
+// relationship, which isn't populated at after_channel_entry_save fire
+// time on EE7). Categories come from category_posts via entry_id.
+//
+// The mock entry shape mirrors EE7's ChannelEntry model at hook fire:
+// columns from exp_channel_titles are direct properties; relationships
+// (->Channel, ->Categories) are NOT pre-loaded.
+
+echo "keys_for_entry(entry_id=42, channel_id=11 -> news, cats=[3,9])\n";
 reset_ee();
-$mockCat3 = (object) array('cat_id' => 3);
-$mockCat9 = (object) array('cat_id' => 9);
-$mockChannel = (object) array('channel_name' => 'news');
-// EE's entry model exposes related models via __get magic; for the test
-// the extension touches ->Channel and ->Categories as if they were
-// properties. Plain stdClass with those fields works.
+ee()->db->seed('channels', array(
+    array('channel_id' => 11, 'channel_name' => 'news'),
+    array('channel_id' => 12, 'channel_name' => 'games'),
+));
+ee()->db->seed('category_posts', array(
+    array('entry_id' => 42, 'cat_id' => 3),
+    array('entry_id' => 42, 'cat_id' => 9),
+));
 $entry = (object) array(
-    'entry_id'     => 42,
-    'channel_name' => 'news',
-    'Channel'      => $mockChannel,
-    'Categories'   => array($mockCat3, $mockCat9),
+    'entry_id'   => 42,
+    'channel_id' => 11,
+    // Note: NO ->Channel and NO ->Categories. That's the realistic shape
+    // the EE7 model lifecycle hook actually delivers.
 );
 $ext = new Edge_cache_tags_ext();
 $k = call_private($ext, 'keys_for_entry', array($entry, array()));
-assertContains_('home',       $k, 'purges home');
-// v2.4.14: 'all' is intentionally NOT in the auto-purge set. The tag
-// is still emitted on every page (so an admin can use the CP manual-
-// purge tool to nuke the cache), but firing it on every entry save
-// would evict every cached page on every publish.
-assertNotContains_('all',     $k, 'does NOT purge all on save (would evict whole cache)');
-assertContains_('entry-42',   $k, 'purges entry-<id>');
-assertContains_('channel-news', $k, 'purges channel-<name>');
-assertContains_('path-news',  $k, 'purges path-<channel>');
-assertContains_('category-3', $k, 'purges category-3');
-assertContains_('category-9', $k, 'purges category-9');
+assertContains_('home',         $k, 'purges home');
+assertNotContains_('all',       $k, 'does NOT purge all on save');
+assertContains_('entry-42',     $k, 'purges entry-<id>');
+assertContains_('channel-news', $k, 'purges channel-<name> via channel_id lookup');
+assertContains_('path-news',    $k, 'purges path-<channel> via channel_id lookup');
+assertContains_('category-3',   $k, 'purges category-3 via category_posts lookup');
+assertContains_('category-9',   $k, 'purges category-9 via category_posts lookup');
+
+echo "\nchannel_id from \$values (not \$entry) — covers the \$entry-is-array case\n";
+reset_ee();
+ee()->db->seed('channels', array(
+    array('channel_id' => 7, 'channel_name' => 'reviews'),
+));
+$ext = new Edge_cache_tags_ext();
+$values = array('entry_id' => 99, 'channel_id' => 7);
+$k = call_private($ext, 'keys_for_entry', array(null, $values));
+assertContains_('entry-99',        $k, 'reads entry_id from \$values');
+assertContains_('channel-reviews', $k, 'reads channel_id from \$values then resolves name');
+assertContains_('path-reviews',    $k, 'path-<channel> from \$values path');
 
 echo "\nMSM keys_for_entry prefixes with site-<id>-\n";
 reset_ee();
 ee()->config->items['site_id'] = 5;
+ee()->db->seed('channels', array(
+    array('channel_id' => 4, 'channel_name' => 'blog'),
+));
 $ext = new Edge_cache_tags_ext();
-$entry = (object) array(
-    'entry_id'   => 100,
-    'Channel'    => (object) array('channel_name' => 'blog'),
-    'Categories' => array(),
-);
+$entry = (object) array('entry_id' => 100, 'channel_id' => 4);
 $k = call_private($ext, 'keys_for_entry', array($entry, array()));
 assertContains_('site-5-entry-100',     $k, 'prefixed entry-100');
 assertContains_('site-5-channel-blog',  $k, 'prefixed channel-blog');
@@ -264,17 +326,36 @@ assertNotContains_('channel-blog', $k, 'MSM site-5 save does NOT purge unprefixe
 echo "\nDefault site (site_id=1): keys NOT prefixed\n";
 reset_ee();
 ee()->config->items['site_id'] = 1;  // explicit default
+ee()->db->seed('channels', array(array('channel_id' => 11, 'channel_name' => 'news')));
+ee()->db->seed('category_posts', array(array('entry_id' => 7, 'cat_id' => 4)));
 $ext = new Edge_cache_tags_ext();
-$entry = (object) array(
-    'entry_id'   => 7,
-    'Channel'    => (object) array('channel_name' => 'news'),
-    'Categories' => array((object) array('cat_id' => 4)),
-);
+$entry = (object) array('entry_id' => 7, 'channel_id' => 11);
 $k = call_private($ext, 'keys_for_entry', array($entry, array()));
 assertContains_('entry-7',      $k, 'unprefixed on default site');
 assertContains_('channel-news', $k, 'unprefixed channel-news on default site');
 assertContains_('category-4',   $k, 'unprefixed category-4 on default site');
 assertNotContains_('site-1-entry-7', $k, 'no site-1- prefix on default site');
+
+// REGRESSION TEST FOR THE 2026-06-03 BUG.
+//
+// Before v2.4.19 the code tried $entry->Channel->channel_name (lazy
+// relationship — null at hook fire). It silently fell through every
+// catch-Throwable and emitted only `home + entry-N`. /news/ and /games/
+// archive pages never evicted on save. This test asserts the fix: when
+// $entry->Channel is missing but channel_id is present, we still get
+// channel-news + path-news in the output.
+echo "\nv2.4.19 regression: ->Channel relationship absent, channel_id only\n";
+reset_ee();
+ee()->db->seed('channels', array(array('channel_id' => 13, 'channel_name' => 'news')));
+$ext = new Edge_cache_tags_ext();
+$entry = (object) array(
+    'entry_id'   => 16639,
+    'channel_id' => 13,
+    // No ->Channel, no ->Categories. This is what the EE7 model emits.
+);
+$k = call_private($ext, 'keys_for_entry', array($entry, array()));
+assertContains_('channel-news', $k, 'pre-v2.4.19 bug: archive page tag NOW emitted from channel_id alone');
+assertContains_('path-news',    $k, 'pre-v2.4.19 bug: URL-segment tag NOW emitted from channel_id alone');
 
 echo "\nDefault site (site_id=1) keys_for_request: unprefixed too\n";
 reset_ee();

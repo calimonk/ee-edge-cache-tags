@@ -35,7 +35,7 @@ if (!defined('BASEPATH')) { exit('No direct script access allowed'); }
 
 class Edge_cache_tags_ext {
 
-    public $version = '2.4.18';
+    public $version = '2.4.19';
 
     const MAX_KEYS    = 50;
     const MAX_KEY_LEN = 64;
@@ -340,37 +340,42 @@ class Edge_cache_tags_ext {
         $keys = array('home');
 
         $entry_id = null;
-        if (is_object($entry) && isset($entry->entry_id)) { $entry_id = $entry->entry_id; }
-        elseif (is_array($values) && isset($values['entry_id'])) { $entry_id = $values['entry_id']; }
+        if (is_object($entry) && isset($entry->entry_id)) { $entry_id = (int) $entry->entry_id; }
+        elseif (is_array($values) && isset($values['entry_id'])) { $entry_id = (int) $values['entry_id']; }
         if ($entry_id) { $keys[] = 'entry-' . $entry_id; }
 
-        // Channel/Categories are exposed via EE's model __get magic, which
-        // looks like ordinary property access ($entry->Channel) — not
-        // method_exists()-detectable. Try the property; catch any error
-        // (Throwable covers both Exception and Error in PHP 7+) if the
-        // relationship isn't loaded.
-        $channel_name = null;
-        try {
-            $channel = is_object($entry) ? ($entry->Channel ?? null) : null;
-            if ($channel && isset($channel->channel_name)) {
-                $channel_name = $channel->channel_name;
-            } elseif (is_object($entry) && isset($entry->channel_name)) {
-                $channel_name = $entry->channel_name;
-            }
-        } catch (\Throwable $e) { /* ignore */ }
+        // v2.4.19 — Channel + Categories via direct DB lookup, NOT via
+        // model relationship traversal.
+        //
+        // The previous (v2.0–v2.4.18) implementation tried `$entry->Channel`
+        // and `$entry->Categories` — EE's lazy-loaded model relationships.
+        // At after_channel_entry_save fire time the model has its own
+        // columns populated but relationships are NOT auto-loaded. Result:
+        // every save in the wild dispatched `home + entry-N` only;
+        // `channel-news`, `path-news`, and `category-N` silently dropped.
+        // Archive pages (/news/, /games/, etc.) never evicted on save.
+        // Caught by rpggamers Activity log review on 2026-06-03.
+        //
+        // The model DOES expose `channel_id` (direct column on
+        // exp_channel_titles) without any relationship load. So we
+        // resolve channel_id → channel_name via exp_channels in one
+        // tiny query (request-cached). Categories come from
+        // exp_category_posts (M2M join table) via entry_id.
+        $channel_id = null;
+        if (is_object($entry) && isset($entry->channel_id)) { $channel_id = (int) $entry->channel_id; }
+        elseif (is_array($values) && isset($values['channel_id'])) { $channel_id = (int) $values['channel_id']; }
+
+        $channel_name = $channel_id ? $this->channel_name_for($channel_id) : null;
         if ($channel_name) {
             $keys[] = 'channel-' . $this->slug($channel_name);
             $keys[] = 'path-' . $this->slug($channel_name);
         }
 
-        try {
-            $cats = is_object($entry) ? ($entry->Categories ?? null) : null;
-            if ($cats) {
-                foreach ($cats as $cat) {
-                    if (isset($cat->cat_id)) { $keys[] = 'category-' . $cat->cat_id; }
-                }
+        if ($entry_id) {
+            foreach ($this->category_ids_for($entry_id) as $cid) {
+                $keys[] = 'category-' . $cid;
             }
-        } catch (\Throwable $e) { /* ignore */ }
+        }
 
         if (function_exists('ee') && isset(ee()->config)) {
             $site_id = (int) ee()->config->item('site_id');
@@ -381,6 +386,64 @@ class Edge_cache_tags_ext {
             }
         }
         return $this->clean($keys);
+    }
+
+    // ---- Channel + category lookup helpers (v2.4.19) ---------------------
+
+    /** Request-scoped cache: channel_id => channel_name. */
+    private static $channel_name_cache = array();
+
+    /**
+     * Resolve `channel_id` → `channel_name` via `exp_channels`. Cached
+     * per request. Returns null on missing channel or DB unavailable.
+     *
+     * Cheaper than `ee('Model')->get('Channel', $id)` and doesn't depend
+     * on EE's ORM bootstrap state (which is uneven across CP / front-end
+     * / hook contexts).
+     */
+    private function channel_name_for($channel_id) {
+        $channel_id = (int) $channel_id;
+        if ($channel_id <= 0) { return null; }
+        if (array_key_exists($channel_id, self::$channel_name_cache)) {
+            return self::$channel_name_cache[$channel_id];
+        }
+        $name = null;
+        try {
+            if (function_exists('ee') && isset(ee()->db) && ee()->db->table_exists('channels')) {
+                $row = ee()->db->select('channel_name')
+                    ->where('channel_id', $channel_id)
+                    ->get('channels')
+                    ->row_array();
+                if ($row && !empty($row['channel_name'])) {
+                    $name = (string) $row['channel_name'];
+                }
+            }
+        } catch (\Throwable $e) { /* leave null */ }
+        self::$channel_name_cache[$channel_id] = $name;
+        return $name;
+    }
+
+    /**
+     * Return the array of cat_id values that an entry currently belongs
+     * to, via the M2M join table `exp_category_posts`. Empty array on
+     * no categories or DB unavailable.
+     */
+    private function category_ids_for($entry_id) {
+        $entry_id = (int) $entry_id;
+        if ($entry_id <= 0) { return array(); }
+        $out = array();
+        try {
+            if (function_exists('ee') && isset(ee()->db) && ee()->db->table_exists('category_posts')) {
+                $rows = ee()->db->select('cat_id')
+                    ->where('entry_id', $entry_id)
+                    ->get('category_posts')
+                    ->result_array();
+                foreach ($rows as $r) {
+                    if (!empty($r['cat_id'])) { $out[] = (int) $r['cat_id']; }
+                }
+            }
+        } catch (\Throwable $e) { /* return empty */ }
+        return $out;
     }
 
     // ---- Public API for manual purge from the CP -------------------------
