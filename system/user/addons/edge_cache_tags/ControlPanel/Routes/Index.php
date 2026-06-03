@@ -1874,10 +1874,10 @@ $assign_to_config[\'edge_cache_tags_cf_api_token\'] = \'...\';</pre>
 <section class="ect-docs-section" id="d-companion">
   <h3><span class="num">9.</span>Recommended companion: Add-on Manager</h3>
   <div class="ect-companion">
-    <div class="ect-companion-icon">↻</div>
+    <div class="ect-companion-icon">↥</div>
     <div class="ect-companion-body">
-      <p style="margin:0 0 6px"><strong>If you maintain multiple EE installs</strong>, the free <a href="https://expressionengine.com/add-ons/addon-manager" target="_blank" rel="noopener">ExpressionEngine Add-on Manager</a> by EllisLab is excellent — it watches the EE store and GitHub releases for every installed add-on and shows a single "updates available" badge in the CP.</p>
-      <p style="margin:0">Edge Cache Tags ships its own GitHub-releases poller (so updates appear in this CP either way), but the Add-on Manager is the right umbrella tool when you\'re managing 10+ EE sites.</p>
+      <p style="margin:0 0 6px"><strong>If you don\'t want to FTP zips into <code>system/user/addons/</code></strong>, the free <a href="https://expressionengine.com/add-ons/addon-manager" target="_blank" rel="noopener">Add-on Manager</a> by Javid Fazaeli is a useful tool — drag an add-on zip into the CP, it installs it for you. No FTP / SCP required.</p>
+      <p style="margin:0">Note: it doesn\'t poll for new versions. Edge Cache Tags ships its own GitHub-releases poller for that — update notifications appear in this CP either way.</p>
     </div>
   </div>
   <h4 style="margin-top:22px">More reading</h4>
