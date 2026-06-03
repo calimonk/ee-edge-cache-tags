@@ -402,8 +402,19 @@ class Index extends AbstractRoute
         if ($effBackend === 'nivoli') {
             $effEndpoint = $overrides['nivoli_endpoint'] ?? ($r['nivoli_endpoint'] ?? '');
             if ($effEndpoint !== '') {
-                $stats = $this->fetchNivoliStats($effEndpoint);
-                if ($stats) $statsHero = $this->renderNivoliStatsWidget($stats);
+                // v2.4.22 — prefer the multi-window hero (one round
+                // trip, four windows side-by-side with local purge
+                // totals). Falls back to the single-window legacy
+                // hero if the Nivoli backend predates /stats/multi.
+                $multi = $this->fetchNivoliStatsMulti($effEndpoint);
+                if ($multi) {
+                    $purgeWin = $this->purgeLogWindowSummary();
+                    $statsHero = $this->renderMultiStatsHero($multi, $purgeWin);
+                }
+                if ($statsHero === '') {
+                    $stats = $this->fetchNivoliStats($effEndpoint);
+                    if ($stats) $statsHero = $this->renderNivoliStatsWidget($stats);
+                }
                 // v2.4.18: surface the token's host scope so a misconfig
                 // (wrong dashboard URL pasted) is obvious at render time
                 // rather than diagnosed via empty stats / failing purges.
@@ -1382,6 +1393,94 @@ HTML;
     }
 
     /**
+     * v2.4.22 — fetch the multi-window summary from /stats/multi.
+     *
+     * Single round trip returns hit rate / requests / errors / avg
+     * response across four windows (6h, 24h, 7d, 30d). Used by the
+     * Setup-tab hero. Returns null if the endpoint is unavailable
+     * (older Nivoli deploy), letting the caller fall back to the
+     * single-window /stats it has always used.
+     */
+    private static $stats_multi_cache = null;
+    private static $stats_multi_cache_key = null;
+    private function fetchNivoliStatsMulti(string $endpoint): ?array
+    {
+        if (!$endpoint) return null;
+        $hostQs = $this->nivoliHostQs();
+        $cacheKey = $endpoint . '|' . $hostQs;
+        if (self::$stats_multi_cache_key === $cacheKey && self::$stats_multi_cache !== null) {
+            return self::$stats_multi_cache ?: null;
+        }
+        $url = rtrim($endpoint, '/') . '/stats/multi' . ($hostQs ? '?host=' . $hostQs : '');
+        $ch = curl_init($url);
+        if (!$ch) return null;
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 4,
+            CURLOPT_CONNECTTIMEOUT => 2,
+            CURLOPT_FAILONERROR    => false,
+            CURLOPT_USERAGENT      => 'edge-cache-tags-ee-cp/2.4.22',
+        ]);
+        $body = @curl_exec($ch);
+        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        $data = null;
+        if ($status === 200 && is_string($body)) {
+            $parsed = json_decode($body, true);
+            if (is_array($parsed) && !empty($parsed['windows']) && is_array($parsed['windows'])) {
+                $data = $parsed;
+            }
+        }
+        self::$stats_multi_cache = $data ?: [];
+        self::$stats_multi_cache_key = $cacheKey;
+        return $data;
+    }
+
+    /**
+     * v2.4.22 — summarize the local purge-log table into windows.
+     *
+     * One query with conditional aggregation, ranged on the
+     * (site_id, created_at) index. Returns ['6h' => ['purges',
+     * 'tags'], '24h' => …, …, 'capHit' => bool].
+     *
+     * Capped by the 500-row auto-prune on `exp_edge_cache_tags_purge_log`
+     * — sites doing > 500 dispatches per 30 days will see the older
+     * windows underreport. The hero footer notes this when at-cap.
+     */
+    private function purgeLogWindowSummary(): array
+    {
+        $siteId = (int) ee()->config->item('site_id') ?: 1;
+        $empty = ['6h' => null, '24h' => null, '7d' => null, '30d' => null, 'capHit' => false];
+        try {
+            if (!ee()->db->table_exists('edge_cache_tags_purge_log')) return $empty;
+            $row = ee()->db->query("
+                SELECT
+                    SUM(IF(created_at >= UNIX_TIMESTAMP() - 21600,   1, 0))         AS p_6h,
+                    SUM(IF(created_at >= UNIX_TIMESTAMP() - 21600,   tag_count, 0)) AS t_6h,
+                    SUM(IF(created_at >= UNIX_TIMESTAMP() - 86400,   1, 0))         AS p_24h,
+                    SUM(IF(created_at >= UNIX_TIMESTAMP() - 86400,   tag_count, 0)) AS t_24h,
+                    SUM(IF(created_at >= UNIX_TIMESTAMP() - 604800,  1, 0))         AS p_7d,
+                    SUM(IF(created_at >= UNIX_TIMESTAMP() - 604800,  tag_count, 0)) AS t_7d,
+                    SUM(IF(created_at >= UNIX_TIMESTAMP() - 2592000, 1, 0))         AS p_30d,
+                    SUM(IF(created_at >= UNIX_TIMESTAMP() - 2592000, tag_count, 0)) AS t_30d,
+                    COUNT(*) AS p_total
+                FROM exp_edge_cache_tags_purge_log
+                WHERE site_id = " . $siteId
+            )->row_array();
+        } catch (\Throwable $e) {
+            return $empty;
+        }
+        if (!$row) return $empty;
+        return [
+            '6h'     => ['purges' => (int) ($row['p_6h']  ?? 0), 'tags' => (int) ($row['t_6h']  ?? 0)],
+            '24h'    => ['purges' => (int) ($row['p_24h'] ?? 0), 'tags' => (int) ($row['t_24h'] ?? 0)],
+            '7d'     => ['purges' => (int) ($row['p_7d']  ?? 0), 'tags' => (int) ($row['t_7d']  ?? 0)],
+            '30d'    => ['purges' => (int) ($row['p_30d'] ?? 0), 'tags' => (int) ($row['t_30d'] ?? 0)],
+            'capHit' => ((int) ($row['p_total'] ?? 0)) >= 495,
+        ];
+    }
+
+    /**
      * Return `<host>` (raw, not URL-encoded) for the current MSM site,
      * derived from EE's site_url. Empty string if undetermined. Caller
      * decides whether to wrap in `?host=<...>` or `&host=<...>`.
@@ -1534,6 +1633,122 @@ HTML;
      * `auto-fit minmax(160px, 1fr)` so it relaxes to 2 / 1 columns on
      * narrower viewports.
      */
+    /**
+     * v2.4.22 — multi-window stats hero. Renders 4 columns side-by-side
+     * (6h / 24h / 7d / 30d) with backend cache metrics + local purge
+     * totals. Returns empty string when there's nothing to display
+     * (no traffic + no purges across all windows) so the caller can
+     * fall back to the single-window legacy widget.
+     */
+    private function renderMultiStatsHero(array $multi, array $purgeWin): string
+    {
+        $windows = $multi['windows'] ?? [];
+        if (empty($windows)) return '';
+
+        // Decide if we have anything worth rendering at all. If every
+        // window is empty AND the purge log is empty, return '' so the
+        // caller falls back to the legacy widget (which itself bails
+        // when totalRequests is zero) or hides the hero entirely.
+        $anyTraffic = false; $anyPurges = false;
+        foreach (['6h','24h','7d','30d'] as $k) {
+            if ((int) ($windows[$k]['requests'] ?? 0) > 0) { $anyTraffic = true; }
+            if ((int) ($purgeWin[$k]['purges']   ?? 0) > 0) { $anyPurges  = true; }
+        }
+        if (!$anyTraffic && !$anyPurges) return '';
+
+        $fmtNum = function ($n): string {
+            $n = (int) $n;
+            if ($n >= 1_000_000) return number_format($n / 1_000_000, 1) . 'M';
+            if ($n >= 1_000)     return number_format($n / 1_000, 1) . 'k';
+            return (string) $n;
+        };
+        $fmtPct = function ($v): string {
+            if ($v === null) return '—';
+            if ($v < 1)  return number_format((float) $v, 2) . '%';
+            return number_format((float) $v, 1) . '%';
+        };
+        $fmtMs = function ($ms): string {
+            if ($ms === null || $ms <= 0) return '—';
+            if ($ms < 1000) return (int) round($ms) . ' ms';
+            return number_format($ms / 1000, 2) . ' s';
+        };
+
+        $order = [
+            ['key' => '6h',  'label' => '6 hours',  'current' => true],
+            ['key' => '24h', 'label' => '24 hours', 'current' => false],
+            ['key' => '7d',  'label' => '7 days',   'current' => false],
+            ['key' => '30d', 'label' => '30 days',  'current' => false],
+        ];
+
+        // One stat-row cell. Inline-styled to survive EE's CP HTML pipeline.
+        $stat = function (string $label, string $value, bool $muted) {
+            $valueStyle = 'font-size:17px;font-weight:700;line-height:1.2' .
+                ($muted ? ';opacity:0.45;font-weight:500;font-size:14px' : '');
+            return '<div style="margin-bottom:6px">'
+                . '<div style="font-size:10px;opacity:0.65;text-transform:uppercase;letter-spacing:0.05em;line-height:1.3">' . htmlspecialchars($label) . '</div>'
+                . '<div style="' . $valueStyle . '">' . htmlspecialchars($value) . '</div>'
+                . '</div>';
+        };
+
+        $winHtml = '';
+        foreach ($order as $w) {
+            $win = $windows[$w['key']] ?? null;
+            $req  = $win ? (int) $win['requests'] : 0;
+            $hasTraffic = $req > 0;
+            $hit  = $win ? $win['hitRatePct']    : null;
+            $resp = $win ? $win['avgResponseMs'] : null;
+            $erp  = $win ? $win['errorRatePct']  : null;
+            $purges = (int) ($purgeWin[$w['key']]['purges'] ?? 0);
+            $tags   = (int) ($purgeWin[$w['key']]['tags']   ?? 0);
+
+            $bgStyle = $w['current']
+                ? 'background:rgba(110,231,183,0.10);border:1px solid rgba(110,231,183,0.30);box-shadow:inset 0 0 0 1px rgba(110,231,183,0.10)'
+                : 'background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08)';
+            $titleColor = $w['current'] ? '#a7f3d0' : '#6ee7b7';
+
+            $winHtml .= '<div style="' . $bgStyle . ';border-radius:6px;padding:12px 14px 10px">'
+                . '<div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:' . $titleColor . ';margin-bottom:10px">' . htmlspecialchars($w['label']) . '</div>'
+                . $stat('Hit rate',     $hasTraffic ? $fmtPct($hit)  : '—', !$hasTraffic)
+                . $stat('Requests',     $hasTraffic ? $fmtNum($req)  : '—', !$hasTraffic)
+                . $stat('Avg response', $hasTraffic ? $fmtMs($resp)  : '—', !$hasTraffic)
+                . $stat('Error rate',   $hasTraffic ? $fmtPct($erp)  : '—', !$hasTraffic)
+                . '<div style="height:1px;background:rgba(255,255,255,0.08);margin:9px 0"></div>'
+                . $stat('Purges fired', $fmtNum($purges), $purges === 0)
+                . $stat('Tags evicted', $fmtNum($tags),   $tags === 0)
+                . '</div>';
+        }
+
+        // Concrete, non-speculative footer.
+        $tags30  = (int) ($purgeWin['30d']['tags']   ?? 0);
+        $purges30 = (int) ($purgeWin['30d']['purges'] ?? 0);
+        $footer = '';
+        if ($purges30 > 0) {
+            $footer = '<div style="margin-top:14px;font-size:12px;color:rgba(255,255,255,0.62);line-height:1.55;border-top:1px solid rgba(255,255,255,0.08);padding-top:11px">'
+                . '<strong style="color:#a7f3d0;font-weight:600">' . htmlspecialchars($fmtNum($tags30)) . '</strong> cache entries refreshed promptly via '
+                . '<strong style="color:#a7f3d0;font-weight:600">' . htmlspecialchars($fmtNum($purges30)) . '</strong> surgical purges over the last 30 days. '
+                . 'No whole-cache nukes — only the pages featuring changed content were evicted.';
+            if (!empty($purgeWin['capHit'])) {
+                $footer .= ' <span style="opacity:0.55">(Log capped at 500 dispatches per site — older 30d purges may not be counted.)</span>';
+            }
+            $footer .= '</div>';
+        }
+
+        return '<div style="background:linear-gradient(135deg,#064e3b 0%,#0b3d52 60%,#134e63 100%);color:#fff;padding:18px 20px 16px;border-radius:8px;margin-bottom:16px;box-shadow:0 3px 12px rgba(6,95,70,0.18)">'
+            . '<div style="font-size:11.5px;font-weight:700;letter-spacing:0.10em;text-transform:uppercase;color:#6ee7b7;margin:0 0 14px;display:flex;align-items:center;gap:10px">'
+            . '<span>📊 Your cache performance</span>'
+            . '<span style="color:rgba(255,255,255,0.55);font-weight:500;font-size:10.5px;letter-spacing:0.05em;text-transform:none;margin-left:auto">windows ending now · Nivoli backend</span>'
+            . '</div>'
+            . '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px" class="ect-multi-wins">'
+            . $winHtml
+            . '</div>'
+            . $footer
+            . '</div>'
+            // Responsive fallback — EE's CP doesn't have a tight media-query
+            // shell. Inject a small inline style so the 4-col grid collapses
+            // on narrower viewports rather than overflowing.
+            . '<style>@media (max-width:980px){.ect-multi-wins{grid-template-columns:repeat(2,minmax(0,1fr))!important}}@media (max-width:520px){.ect-multi-wins{grid-template-columns:1fr!important}}</style>';
+    }
+
     private function renderNivoliStatsWidget(array $stats): string
     {
         $summary = $stats['summary'] ?? [];
