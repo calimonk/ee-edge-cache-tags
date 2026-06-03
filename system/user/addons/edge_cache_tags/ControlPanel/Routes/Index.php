@@ -1711,16 +1711,19 @@ HTML;
             $numStyleB = str_replace('#3fb950', '#58a6ff', $numStyleG);
             $unitStyle = 'font-size:18px;color:#8b949e;font-weight:600';
             $subStyle  = 'font-size:11.5px;color:#8b949e;margin-top:3px;line-height:1.4';
+            $footStyle = 'font-size:11px;color:#6e7681;margin-top:14px;padding-top:11px;border-top:1px solid rgba(46,160,67,0.18);line-height:1.5';
             $offloadHtml = '<div style="background:linear-gradient(135deg,rgba(63,185,80,0.06) 0%,rgba(45,212,191,0.03) 100%);border:1px solid #2ea043;border-radius:8px;padding:14px 18px 16px;margin-bottom:14px">'
                 . '<div style="font-size:10.5px;font-weight:700;letter-spacing:0.10em;text-transform:uppercase;color:#3fb950;margin-bottom:10px;display:flex;align-items:center;gap:10px">'
                 . '<span>Origin offload — work the cache did for you</span>'
                 . '<span style="color:#8b949e;font-weight:500;letter-spacing:0.05em;text-transform:none;font-size:10.5px;margin-left:auto">last 30 days</span>'
                 . '</div>'
                 . '<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px" class="ect-offload-grid">'
-                . '<div style="' . $cellStyle . '"><div style="' . $numStyleG . '">' . htmlspecialchars($bwNum) . ' <span style="' . $unitStyle . '">' . htmlspecialchars($bwUnit) . '</span></div><div style="' . $subStyle . '">bandwidth served from cache</div></div>'
-                . '<div style="' . $cellStyle . '"><div style="' . $numStyleG . '">' . htmlspecialchars($fmtNum($hits30)) . '</div><div style="' . $subStyle . '">requests your origin never saw</div></div>'
-                . '<div style="' . $cellStyle . '"><div style="' . $numStyleB . '">' . htmlspecialchars($fmtPct($offloadPct)) . '</div><div style="' . $subStyle . '">of requests offloaded</div></div>'
-                . '</div></div>';
+                . '<div style="' . $cellStyle . '"><div style="' . $numStyleG . '">' . htmlspecialchars($bwNum) . ' <span style="' . $unitStyle . '">' . htmlspecialchars($bwUnit) . '</span></div><div style="' . $subStyle . '">HTML bandwidth served from cache</div></div>'
+                . '<div style="' . $cellStyle . '"><div style="' . $numStyleG . '">' . htmlspecialchars($fmtNum($hits30)) . '</div><div style="' . $subStyle . '">page requests your origin never saw</div></div>'
+                . '<div style="' . $cellStyle . '"><div style="' . $numStyleB . '">' . htmlspecialchars($fmtPct($offloadPct)) . '</div><div style="' . $subStyle . '">of HTML requests offloaded</div></div>'
+                . '</div>'
+                . '<div style="' . $footStyle . '">HTML responses only. Images, CSS, and JS are served via Cloudflare\'s regular asset cache and not counted here.</div>'
+                . '</div>';
         }
 
         $order = [
