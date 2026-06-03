@@ -1590,11 +1590,52 @@ HTML;
         $code = function ($lines) {
             $rows = '';
             foreach ((array) $lines as $ln) {
-                // Render each line as its own div with monospace + dark bg.
-                $rows .= '<div style="padding:2px 0">' . $ln . '</div>';
+                $rows .= '<div class="ect-docs-codeline">' . $ln . '</div>';
             }
-            return '<div style="background:#0f172a;color:#e2e8f0;padding:14px 16px;border-radius:7px;font-size:12.5px;line-height:1.7;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;overflow-x:auto;white-space:pre-wrap;word-break:break-word">' . $rows . '</div>';
+            return '<div class="ect-docs-code">' . $rows . '</div>';
         };
+
+        // v2.4.20 — supplemental CSS for the Documentation tab: section
+        // dividers, callouts (info/warn/tip), cleaner code-line spans. Lives
+        // here so the doc tab is self-contained and easy to restyle.
+        $supplementalCss = '<style>
+.ect-docs-toc { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:14px 18px; margin:0 0 24px; max-width:760px; }
+.ect-docs-toc-title { display:block; font-size:11.5px; font-weight:600; letter-spacing:0.1em; text-transform:uppercase; color:#64748b; margin-bottom:8px; }
+.ect-docs-toc ol { margin:0; padding-left:20px; columns:2; column-gap:28px; }
+.ect-docs-toc li { margin:3px 0; break-inside:avoid; }
+.ect-docs-toc a { color:#1d4ed8; text-decoration:none; font-size:13px; }
+.ect-docs-toc a:hover { text-decoration:underline; }
+.ect-docs-section { padding-top:8px; margin-top:36px; border-top:1px solid #e2e8f0; }
+.ect-docs-section:first-of-type { margin-top:0; border-top:0; padding-top:0; }
+.ect-docs-section h3 { font-size:18px; margin:0 0 14px; padding-bottom:10px; border-bottom:1px solid #e2e8f0; color:#0f172a; line-height:1.3; scroll-margin-top:80px; }
+.ect-docs-section h3 .num { color:#1d4ed8; font-variant-numeric:tabular-nums; margin-right:10px; font-weight:700; font-size:0.85em; }
+.ect-docs-section h4 { font-size:14px; margin:20px 0 6px; color:#1e293b; font-weight:600; }
+.ect-docs-code { background:#0f172a; color:#e2e8f0; padding:14px 16px; border-radius:7px; font-size:12.5px; line-height:1.75; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; overflow-x:auto; white-space:pre-wrap; word-break:break-word; margin:0 0 14px; max-width:760px; }
+.ect-docs-codeline { padding:1px 0; }
+.ect-docs .ect-callout { border-radius:7px; padding:12px 16px; margin:0 0 16px; font-size:13px; line-height:1.65; border:1px solid; max-width:760px; }
+.ect-docs .ect-callout p:last-child { margin-bottom:0; }
+.ect-docs .ect-callout p { margin:0 0 8px; color:inherit; }
+.ect-docs .ect-callout-tip { background:#ecfdf5; border-color:#a7f3d0; color:#065f46; }
+.ect-docs .ect-callout-tip strong { color:#047857; }
+.ect-docs .ect-callout-info { background:#eff6ff; border-color:#bfdbfe; color:#1e3a8a; }
+.ect-docs .ect-callout-info strong { color:#1d4ed8; }
+.ect-docs .ect-callout-warn { background:#fffbeb; border-color:#fde68a; color:#78350f; }
+.ect-docs .ect-callout-warn strong { color:#b45309; }
+.ect-docs .ect-callout .ect-label { display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; margin-right:8px; padding:1px 7px; border-radius:4px; }
+.ect-docs .ect-callout-tip  .ect-label { background:#bbf7d0; color:#065f46; }
+.ect-docs .ect-callout-info .ect-label { background:#bfdbfe; color:#1d4ed8; }
+.ect-docs .ect-callout-warn .ect-label { background:#fde68a; color:#78350f; }
+.ect-docs table.ect-table { border-collapse:collapse; width:100%; max-width:760px; margin:0 0 16px; font-size:13px; background:white; border:1px solid #e2e8f0; border-radius:6px; overflow:hidden; }
+.ect-docs table.ect-table thead { background:#f1f5f9; }
+.ect-docs table.ect-table th, .ect-docs table.ect-table td { padding:8px 12px; border-bottom:1px solid #e2e8f0; text-align:left; vertical-align:top; color:#0f172a; }
+.ect-docs table.ect-table th { font-size:11.5px; text-transform:uppercase; letter-spacing:0.06em; color:#64748b; font-weight:600; }
+.ect-docs table.ect-table tr:last-child td { border-bottom:0; }
+.ect-docs .ect-companion { display:flex; gap:14px; align-items:flex-start; padding:14px 16px; background:#fef3c7; border:1px solid #fde68a; border-radius:8px; max-width:760px; }
+.ect-docs .ect-companion-icon { flex:0 0 36px; height:36px; background:#fbbf24; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:700; color:#78350f; }
+.ect-docs .ect-companion-body { flex:1; color:#78350f; font-size:13px; line-height:1.6; }
+.ect-docs .ect-companion-body strong { color:#78350f; }
+.ect-docs .ect-companion-body a { color:#b45309; font-weight:600; }
+</style>';
 
         // Examples use a generic <code>articles</code> channel so the docs read
         // the same whether the site happens to be news, games, recipes,
@@ -1652,200 +1693,202 @@ HTML;
             '<span style="color:#86efac">$config</span>[<span style="color:#fcd34d">\'edge_cache_tags_webhook_secret\'</span>] = <span style="color:#fcd34d">\'...\'</span>;',
         ]);
 
-        return '<div class="ect-card ect-docs">
+        return $supplementalCss . '<div class="ect-card ect-docs">
 
-<h2>How tag-based cache invalidation works</h2>
-<p>If you\'ve only used URL-based purges before ("when /blog/foo updates, purge /blog/foo"), tag-based is the upgrade. The page advertises what it CONTAINS; the edge purges by content identity. Read this once and the template patterns below click immediately.</p>
+<h2 style="margin-bottom:6px">Documentation</h2>
+<p class="sub" style="margin:0 0 18px">Full reference at <a href="https://codebit.nl/edge-cache-ee/docs/" target="_blank" rel="noopener">codebit.nl/edge-cache-ee/docs</a> — this tab is the in-CP quick reference.</p>
 
-<h3>The chain in one sentence</h3>
-<p>Every page emits a list of tags describing what\'s on it (<code>entry-123</code>, <code>category-9</code>, <code>channel-articles</code>, <code>home</code>). When an editor saves entry 123 in the CP, this addon POSTs a purge for the tag <code>entry-123</code>. The edge cache evicts <strong>every page</strong> that carried that tag — the single-entry view, the homepage list that featured it, the category archive that included it — all in one call. No URL enumeration. No "forgot to purge the homepage" bugs.</p>
+<nav class="ect-docs-toc" aria-label="On this page">
+  <span class="ect-docs-toc-title">On this page</span>
+  <ol>
+    <li><a href="#d-concepts">How it works</a></li>
+    <li><a href="#d-emitted">What auto-emits</a></li>
+    <li><a href="#d-templates">Template integration</a></li>
+    <li><a href="#d-purges">What purges on save</a></li>
+    <li><a href="#d-config">Configuration</a></li>
+    <li><a href="#d-backends">Backends</a></li>
+    <li><a href="#d-msm">MSM</a></li>
+    <li><a href="#d-faq">Common questions</a></li>
+    <li><a href="#d-companion">Add-on Manager</a></li>
+  </ol>
+</nav>
 
-<h3>What gets emitted on every page (automatic)</h3>
-<p>The addon already auto-tags from the URI and template context:</p>
-' . $emittedExample . '
-<ul style="margin-top:12px">
-  <li><code>path-&lt;first-segment&gt;</code> — first URL segment (e.g. <code>path-news</code> for /news/anything)</li>
-  <li><code>all</code> — every page carries this; lets an admin nuke everything with one tag</li>
-  <li><code>home</code> — only on the homepage / front controller</li>
-  <li>MSM site_id &gt; 1: all keys above prefixed with <code>site-&lt;id&gt;-</code>, plus an unprefixed <code>all</code></li>
-</ul>
-<p style="margin-top:10px;font-size:12.5px;color:#94a3b8;line-height:1.6"><em>Note: there\'s no auto-emitted "rendered by template X" tag. EE\'s template_post_parse fires multiple times per page (URL template → embeds → layout), so any auto-captured value reflected the last-parsed template (usually the layout) — too broad to be useful. If you want a template-scoped tag, push it explicitly with <code>{exp:edge_cache_tags:key name="tmpl-news-listing"}</code> at the top of the relevant template.</em></p>
-<p style="margin-top:10px"><strong>What\'s missing:</strong> the addon can\'t know which <em>entries</em> are on a page from outside the template — that\'s why you add the next step.</p>
+<section class="ect-docs-section" id="d-concepts">
+  <h3><span class="num">1.</span>How tag-based cache invalidation works</h3>
+  <p>If you\'ve only used URL-based purges before — "when /news/foo updates, purge /news/foo" — tag-based is the upgrade. The page advertises what it <em>contains</em>; the edge purges by content identity.</p>
+  <p><strong>The chain in one sentence:</strong> every page emits a list of tags describing what\'s on it (<code>entry-123</code>, <code>category-9</code>, <code>channel-news</code>, <code>home</code>). When an editor saves entry 123, this addon POSTs a purge for those tags. The edge evicts every page carrying any of them — single-entry view, channel index, category archive — all in one call.</p>
+  <h4>Why entry IDs and not URLs?</h4>
+  <ul>
+    <li><strong>Stability.</strong> Entry IDs never change. URL titles change on slug edits; URLs change when you reorganize taxonomies. ID-tagged cache survives all of that.</li>
+    <li><strong>Cross-page coverage.</strong> The same entry appears on many URLs — one <code>entry-N</code> tag intersects all of them.</li>
+    <li><strong>Save-event compatibility.</strong> EE\'s <code>after_channel_entry_save</code> hook hands the addon the entry id directly — no URL list to maintain.</li>
+  </ul>
+</section>
 
-<h3>What YOU add to your templates</h3>
-<p>For each page that shows entry data, declare which entries are on it. Then editing that entry purges this page.</p>
+<section class="ect-docs-section" id="d-emitted">
+  <h3><span class="num">2.</span>What gets emitted on every page</h3>
+  <p>The addon auto-tags from the URI on every front-end GET. Example for <code>/news/some-article</code>:</p>
+  ' . $emittedExample . '
+  <table class="ect-table">
+    <thead><tr><th>Tag</th><th>When emitted</th></tr></thead>
+    <tbody>
+      <tr><td><code>path-&lt;first-segment&gt;</code></td><td>Any URL with a path. <code>/news/foo</code> → <code>path-news</code>.</td></tr>
+      <tr><td><code>home</code></td><td>Homepage / front controller root.</td></tr>
+      <tr><td><code>all</code></td><td>Every page (lets an admin nuke everything via one manual purge).</td></tr>
+      <tr><td><code>site-&lt;id&gt;-*</code></td><td>MSM only — every tag prefixed with site id + an unprefixed <code>all</code>.</td></tr>
+      <tr><td><code>entry-N</code>, <code>channel-X</code>, <code>category-N</code></td><td>Only when templates declare them — see next section.</td></tr>
+    </tbody>
+  </table>
+  <div class="ect-callout ect-callout-info">
+    <span class="ect-label">Note</span><strong>No auto template tag.</strong> EE\'s <code>template_post_parse</code> fires multiple times per page (URL template → embeds → layout), so any auto-captured value tracked the wrong one. Push template-scoped tags explicitly: <code>{exp:edge_cache_tags:key name="tmpl-news-index"}</code>.
+  </div>
+</section>
 
-<p style="margin-top:14px"><strong>Pattern 1 — single entry view</strong> (e.g. <code>/news/some-article</code>)</p>
-' . $singleEntryExample . '
-<p style="margin-top:8px;font-size:13px;color:#475569">Now if someone edits this entry, OR changes its categories, OR deletes it — this page evicts. <strong>If your site doesn\'t use EE categories</strong>, just omit the <code>{categories}</code> block — everything else still works.</p>
+<section class="ect-docs-section" id="d-templates">
+  <h3><span class="num">3.</span>Template integration</h3>
+  <p>For each page that displays entry data, declare which entries are on it. <code>{exp:edge_cache_tags:key name="…"}</code> outputs nothing — it just registers tags that emit in <code>Surrogate-Key</code>.</p>
 
-<p style="margin-top:18px"><strong>Pattern 2 — listing / index page</strong> (e.g. <code>/news/</code> with 20 latest entries)</p>
-' . $listingExample . '
-<p style="margin-top:8px;font-size:13px;color:#475569">Listing pages tag EACH entry they display, plus the channel. Saving any one of those 20 entries purges this listing. Adding a 21st entry also purges it (the <code>channel-articles</code> tag fires on every save in that channel).</p>
+  <h4>Pattern 1 — single entry view (e.g. <code>/news/some-article</code>)</h4>
+  ' . $singleEntryExample . '
+  <p>Now editing this entry, changing categories, or deleting it evicts this page. <strong>If you don\'t use EE categories,</strong> omit the <code>{categories}</code> block.</p>
 
-<h4 style="margin:14px 0 4px;font-size:13px;font-weight:600;color:#1e293b">What about paginated pages? (<code>/articles/</code>, <code>/articles/P20</code>, <code>/articles/P40</code> …)</h4>
-<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
-  Every paginated page runs the <strong>same template</strong>, so they all emit the same <code>channel-&lt;name&gt;</code> tag. Each page additionally tags only the 20 entries currently visible on it (page 1 → <code>entry-1</code> … <code>entry-20</code>, page 3 → <code>entry-41</code> … <code>entry-60</code>, etc).
-</p>
-<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
-  <strong>The result:</strong>
-</p>
-<ul style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.55">
-  <li>Edit entry-50 → fires <code>entry-50</code> + <code>channel-articles</code> → page 3 (which had entry-50) evicts via entry-50, the rest of the pagination evicts via channel-articles. All pagination pages refresh together.</li>
-  <li>Add a NEW entry → fires <code>channel-articles</code> → all pagination pages evict (correct — a new entry shifts the order).</li>
-  <li>Delete entry-25 → same: <code>channel-articles</code> fires, all pages refresh.</li>
-</ul>
-<p style="margin:0 0 0;font-size:13px;color:#475569;line-height:1.55">
-  So <strong><code>channel-&lt;name&gt;</code> is the load-bearing tag for paginated listings</strong> — make sure your listing template emits it. The per-entry tags are belt-and-suspenders: they make individual edits land surgically (only the page that featured the edited entry would <em>need</em> to refresh), and they\'re useful when one template hosts a list AND another template embeds the same entries (think: a featured-3 widget on the homepage that uses <code>{exp:channel:entries limit="3"}</code>).
-</p>
+  <h4>Pattern 2 — listing / index page (e.g. <code>/news/</code>)</h4>
+  ' . $listingExample . '
+  <p>Listing pages tag each entry they display, plus the channel. Saving any of the displayed entries purges this listing. Adding a new entry also purges it via <code>channel-articles</code>.</p>
 
-<h3>Common questions</h3>
+  <h4>Pattern 3 — paginated listings</h4>
+  <p>Every paginated page runs the same template, so they all emit the same <code>channel-&lt;name&gt;</code>. Each page additionally tags the entries currently visible on it.</p>
+  <ul>
+    <li>Edit <code>entry-50</code> → fires <code>entry-50 channel-articles</code> → page 3 (had entry-50) evicts via entry-50, rest evict via channel-articles.</li>
+    <li>Add a new entry → fires <code>channel-articles</code> → all pagination pages evict (correct — order shifts).</li>
+    <li>Delete entry-25 → same: <code>channel-articles</code> fires, all pages refresh.</li>
+  </ul>
+  <p><strong><code>channel-&lt;name&gt;</code> is the load-bearing tag for paginated listings</strong> — emit it on every listing template.</p>
 
-<h4 style="margin:14px 0 4px;font-size:13.5px;font-weight:600;color:#1e293b">Do I need to pick a backend before headers start emitting?</h4>
-<p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
-  <strong>No.</strong> Headers emit on every front-end GET that goes through the EE template engine, regardless of which backend is selected — including <code>none</code>. The backend choice only controls where purges get dispatched on entry saves; the response headers themselves are independent. So you can install the addon, leave the backend on <code>none</code>, and start seeing <code>Surrogate-Key</code> / <code>Cache-Tag</code> in fresh responses immediately. Pick a backend later when you want auto-purges too.
-</p>
-
-<h4 style="margin:14px 0 4px;font-size:13.5px;font-weight:600;color:#1e293b">How can headers come out BEFORE the body if the template tag is inside the HTML?</h4>
-<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
-  Output buffering. The EE template engine works in stages:
-</p>
-<ol style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
-  <li>All template tags run — including <code>{exp:edge_cache_tags:key}</code>, which stashes keys in a session cache and outputs nothing</li>
-  <li>After the body is fully parsed, the <code>template_post_parse</code> hook fires</li>
-  <li>The addon reads the stashed keys + URI context + template-group context, calls <code>ee()->output->set_header(...)</code> to <strong>register</strong> the headers</li>
-  <li>EE finalizes output: HTTP headers are sent FIRST (yours included), THEN the body</li>
-</ol>
-<p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
-  So template tag order doesn\'t matter — the entire body is buffered, then headers go out in front of it. You can put the plugin tag anywhere inside <code>&lt;html&gt;...&lt;/html&gt;</code>.
-</p>
-
-<h4 style="margin:14px 0 4px;font-size:13.5px;font-weight:600;color:#1e293b">Can I make up my own tags?</h4>
-<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
-  <strong>Yes — tags are arbitrary strings.</strong> The <code>channel-&lt;name&gt;</code> / <code>category-&lt;id&gt;</code> convention exists because EE hands the addon channel and category data through its save hooks, so those are auto-purged. Outside that, there\'s no preset list — invent any taxonomy that makes sense for your content (tags like <code>author-jane</code>, <code>topic-pricing</code>, <code>region-eu</code>, <code>year-2026</code>, <code>featured</code>, anything you can spell).
-</p>
-<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">Example — an entry view with two custom relationship fields, used to register one tag per related item:</p>
-<pre style="background:#0f172a;color:#e2e8f0;padding:10px 14px;border-radius:6px;font-size:12px;font-family:ui-monospace,Menlo,monospace;line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-word">{exp:channel:entries channel="articles" limit="1"}
+  <h4>Pattern 4 — your own taxonomy</h4>
+  <p>Tags are arbitrary strings. Invent any you can spell:</p>
+  <pre style="background:#0f172a;color:#e2e8f0;padding:10px 14px;border-radius:6px;font-size:12px;font-family:ui-monospace,Menlo,monospace;line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-word;max-width:760px">{exp:channel:entries channel="articles" limit="1"}
   {exp:edge_cache_tags:key name="entry-{entry_id} channel-articles"}
-  <span style="color:#94a3b8">{!-- Custom: tag with each related author and topic --}</span>
+  <span style="color:#94a3b8">{!-- Custom: tag per related author / topic --}</span>
   {your_authors_field}{exp:edge_cache_tags:key name="author-{author_slug}"}{/your_authors_field}
   {your_topics_field}{exp:edge_cache_tags:key name="topic-{topic_slug}"}{/your_topics_field}
 {/exp:channel:entries}</pre>
-<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
-  Now the page is tagged <code>entry-N channel-articles author-jane topic-pricing topic-eu</code>. Purging <code>author-jane</code> evicts every article page bylined to her AND any author listing that featured her — in one call.
-</p>
-<p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
-  <strong>Triggering the purge:</strong> the addon\'s built-in auto-purge only fires the standard tags on entry save (<code>entry-N</code>, <code>channel-X</code>, <code>path-X</code>, <code>category-Y</code>, <code>home</code>). For custom taxonomies, dispatch via the <strong>Quick actions</strong> panel on the Setup tab when you change them, or call <code>Edge_cache_tags_ext::manual_purge_tags([\'author-jane\'])</code> from a custom EE extension hooked into <code>after_channel_entry_save</code>. (Notably absent: <code>all</code> — that tag emits on every page so you can nuke the cache via the manual purge form, but auto-firing it on every save would evict every cached page on every entry change.)
-</p>
+  <p>Now the page is tagged <code>entry-N channel-articles author-jane topic-pricing</code>. Purging <code>author-jane</code> evicts every page bylined to her in one call.</p>
+  <p><strong>Triggering custom-tag purges:</strong> auto-purge only fires the standard tags. For custom taxonomies, use Quick actions on Setup, or call <code>Edge_cache_tags_ext::manual_purge_tags([\'author-jane\'])</code> from a hook.</p>
+</section>
 
-<h4 style="margin:14px 0 4px;font-size:13.5px;font-weight:600;color:#1e293b">How do I configure different settings per MSM site in config.php?</h4>
-<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
-  <strong>Easiest answer: skip config.php for MSM and use the CP form.</strong> The settings table (<code>exp_edge_cache_tags_settings</code>) is keyed by <code>site_id</code>, so each MSM site has its own row. Switch the EE site picker at the top of the CP, open Edge Cache Tags, configure backend + credentials independently for that site. Repeat for each site. No code edits.
-</p>
-<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
-  If you really want config-as-code, <code>config.php</code> is shared across all MSM sites — so you have to gate the items on the requesting hostname (the <code>site_id</code> isn\'t resolved this early in EE\'s bootstrap). Pattern:
-</p>
-<pre style="background:#0f172a;color:#e2e8f0;padding:10px 14px;border-radius:6px;font-size:12px;font-family:ui-monospace,Menlo,monospace;line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-word">$host = isset($_SERVER[\'HTTP_HOST\']) ? strtolower($_SERVER[\'HTTP_HOST\']) : \'\';
+<section class="ect-docs-section" id="d-purges">
+  <h3><span class="num">4.</span>What gets purged on save</h3>
+  <p>When an editor hits Save (or deletes an entry), one POST per backend dispatches these tags:</p>
+  <table class="ect-table">
+    <thead><tr><th>Tag</th><th>Evicts</th></tr></thead>
+    <tbody>
+      <tr><td><code>entry-&lt;id&gt;</code></td><td>Every page that featured this entry</td></tr>
+      <tr><td><code>channel-&lt;name&gt;</code></td><td>Channel listing pages declared in templates</td></tr>
+      <tr><td><code>path-&lt;name&gt;</code></td><td>Every URL under <code>/&lt;name&gt;/…</code></td></tr>
+      <tr><td><code>category-&lt;cat_id&gt;</code> ×N</td><td>One per category — category archives</td></tr>
+      <tr><td><code>home</code></td><td>The homepage</td></tr>
+      <tr><td><code>site-&lt;id&gt;-*</code></td><td>MSM only — all the above prefixed for isolation</td></tr>
+    </tbody>
+  </table>
+  <div class="ect-callout ect-callout-warn">
+    <span class="ect-label">Notable absence</span><code>all</code> is NOT auto-purged on save. Every page emits it so an admin can nuke the cache via Quick actions — but firing it on every save would evict every cached page on every publish, defeating the surgical-purge premise.
+  </div>
+  <p>Multiple saves in the same CP request coalesce into <strong>one</strong> POST per backend. Bounded 5-second timeout.</p>
+</section>
 
-if (strpos($host, \'site-a.example.com\') !== false) {
-    $config[\'edge_cache_tags_backend\']      = \'cloudflare\';
-    $config[\'edge_cache_tags_cf_zone_id\']   = \'...\';
-    $config[\'edge_cache_tags_cf_api_token\'] = \'...\';
-} elseif (strpos($host, \'site-b.example.com\') !== false) {
-    $config[\'edge_cache_tags_backend\']        = \'fastly\';
-    $config[\'edge_cache_tags_fastly_service\'] = \'...\';
-    $config[\'edge_cache_tags_fastly_api_key\'] = \'...\';
-} elseif (strpos($host, \'site-c.example.com\') !== false) {
-    $config[\'edge_cache_tags_backend\']         = \'nivoli\';
-    $config[\'edge_cache_tags_nivoli_endpoint\'] = \'https://console.nivoli.com/cache/&lt;token&gt;\';
-}</pre>
-<p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
-  The addon\'s config resolution still applies inside each branch: config.php items win over the CP form. The 🔒 lock indicator shows you which fields are pinned <em>for the current MSM site you\'re viewing</em>. So you can pin the backend via config.php for some sites and let others use the CP form — mix and match.
-</p>
-<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
-  <strong>Alternative: per-front-controller via <code>$assign_to_config</code>.</strong> If your MSM setup uses a separate <code>index.php</code> per site (a common pattern for keeping completely independent EE installs that share infrastructure), the top-of-file <code>$assign_to_config</code> array is the cleanest place. EE merges it into the config registry on bootstrap, so the addon reads the right values automatically:
-</p>
-<pre style="background:#0f172a;color:#e2e8f0;padding:10px 14px;border-radius:6px;font-size:12px;font-family:ui-monospace,Menlo,monospace;line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-word"><span style="color:#94a3b8">// index.site-a.php (separate front controller per MSM site)</span>
-$assign_to_config[\'template_group\'] = \'home\';
-$assign_to_config[\'template\']       = \'index\';
-
+<section class="ect-docs-section" id="d-config">
+  <h3><span class="num">5.</span>Configuration</h3>
+  <p>Three ways to configure, highest-precedence first:</p>
+  <ol>
+    <li><code>$assign_to_config</code> in your front controller (per-MSM-site, front-end only)</li>
+    <li><code>config.php</code> — shared across all MSM sites</li>
+    <li>CP form — Edge Cache → Setup; per-site row in <code>exp_edge_cache_tags_settings</code></li>
+  </ol>
+  <h4>config.php example</h4>
+  <p>Pin values code-side. The 🔒 lock indicator on the CP form shows which fields are pinned.</p>
+  ' . $configExample . '
+  <h4>Per-front-controller (MSM)</h4>
+  <p>If each MSM site has its own <code>index.php</code>, put per-site overrides there:</p>
+  <pre style="background:#0f172a;color:#e2e8f0;padding:10px 14px;border-radius:6px;font-size:12px;font-family:ui-monospace,Menlo,monospace;line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-word;max-width:760px"><span style="color:#94a3b8">// index.site-a.php</span>
 $assign_to_config[\'edge_cache_tags_backend\']      = \'cloudflare\';
 $assign_to_config[\'edge_cache_tags_cf_zone_id\']   = \'...\';
 $assign_to_config[\'edge_cache_tags_cf_api_token\'] = \'...\';</pre>
-<p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
-  Put each site\'s overrides in its own front controller. Main site\'s defaults still come from <code>config.php</code> if anything\'s set there.
-</p>
-<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:12px 14px;margin:8px 0 14px;max-width:760px">
-  <p style="margin:0 0 6px;font-size:13px;color:#78350f;line-height:1.55"><strong>⚠️ Gotcha: <code>$assign_to_config</code> in <code>index.php</code> is front-end only.</strong></p>
-  <p style="margin:0 0 6px;font-size:12.5px;color:#78350f;line-height:1.6">
-    The Control Panel runs through <code>admin.php</code>, not <code>index.php</code>. So any <code>$assign_to_config</code> values you set in a site\'s <code>index.php</code> are read on front-end page hits (and the addon\'s header emit + auto-purge see them correctly), but the <strong>CP settings page can\'t see them</strong> — you\'ll get a "Backend credentials — unknown backend" warning in Diagnostics, and the form fields show as editable rather than 🔒 locked.
-  </p>
-  <p style="margin:0 0 6px;font-size:12.5px;color:#78350f;line-height:1.6">
-    Two ways to make the CP see the same values:
-  </p>
-  <ul style="margin:0 0 0 18px;font-size:12.5px;color:#78350f;line-height:1.6">
-    <li>Put them in <code>system/user/config/config.php</code> — shared across both front-controllers (recommended for single-site installs)</li>
-    <li>OR mirror them into <code>admin.php</code> as well — gate by hostname if you\'re running MSM (the CP doesn\'t know which MSM site you\'re viewing until after bootstrap, so per-host gating is the only way)</li>
+  <div class="ect-callout ect-callout-warn">
+    <span class="ect-label">Gotcha</span><strong><code>$assign_to_config</code> in <code>index.php</code> is front-end only.</strong> The CP runs through <code>admin.php</code>. Values in <code>index.php</code> ARE seen by front-end emits + auto-purges, but the CP can\'t read them — "unknown backend" shows in Diagnostics. Either put them in <code>config.php</code> (shared) or mirror into <code>admin.php</code> too, gated by hostname.
+  </div>
+</section>
+
+<section class="ect-docs-section" id="d-backends">
+  <h3><span class="num">6.</span>Backends</h3>
+  <p>Headers always emit. The backend choice is just where purges go.</p>
+  <table class="ect-table">
+    <thead><tr><th>Backend</th><th>Reads</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><strong>fastly</strong></td><td><code>Surrogate-Key</code></td><td><code>POST /service/&lt;id&gt;/purge</code>. Standard plans OK. Token needs <em>purge</em> permission.</td></tr>
+      <tr><td><strong>cloudflare</strong></td><td><code>Cache-Tag</code></td><td><code>POST /zones/&lt;id&gt;/purge_cache</code>. <strong>Requires Enterprise.</strong></td></tr>
+      <tr><td><strong>nivoli</strong></td><td><code>Surrogate-Key</code></td><td><code>POST &lt;dashboard&gt;/purge-tag</code>. Managed, pre-wired.</td></tr>
+      <tr><td><strong>webhook</strong></td><td>(your edge)</td><td>JSON <code>{tags, site_id, source}</code>. Optional bearer secret.</td></tr>
+      <tr><td><strong>none</strong></td><td>headers only</td><td>Headers emit; no dispatch. For VCL-managed Varnish.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="ect-docs-section" id="d-msm">
+  <h3><span class="num">7.</span>Multi-Site Manager (MSM)</h3>
+  <p><strong>Default site (<code>site_id = 1</code>):</strong> keys are emitted and purged unprefixed. Works like a single-site install.</p>
+  <p><strong>Secondary sites (<code>site_id &gt; 1</code>):</strong> all keys prefixed with <code>site-&lt;id&gt;-</code> for cross-site isolation. Pages still emit an unprefixed <code>all</code> so an admin can do a network-wide nuke.</p>
+  <p>One EE install with N sites uses <strong>one</strong> purge backend. The site-id prefix keeps tag namespaces separate.</p>
+  <div class="ect-callout ect-callout-tip">
+    <span class="ect-label">Nivoli + MSM</span>To share one Nivoli endpoint across MSM sites, ask Nivoli support to link your tokens — the <code>site-&lt;id&gt;-</code> prefix routes purges to the right hostname automatically. The Setup tab\'s host-scope banner confirms the current site is in scope.
+  </div>
+</section>
+
+<section class="ect-docs-section" id="d-faq">
+  <h3><span class="num">8.</span>Common questions</h3>
+
+  <h4>Do I need a backend selected before headers emit?</h4>
+  <p><strong>No.</strong> Headers emit on every front-end GET regardless of which backend is selected, including <code>none</code>. The backend choice only controls where purges go on save.</p>
+
+  <h4>How can headers come out before the body if the template tag is inside the HTML?</h4>
+  <p>Output buffering. All template tags run first (including <code>{exp:edge_cache_tags:key}</code>, which stashes keys silently). Then <code>template_post_parse</code> fires, the addon reads the stashed keys, and calls <code>ee()->output->set_header(...)</code>. EE sends headers before the body.</p>
+  <p>Template tag order doesn\'t matter — place the plugin tag anywhere inside <code>&lt;html&gt;…&lt;/html&gt;</code>.</p>
+
+  <h4>I curled and didn\'t see the headers. What gives?</h4>
+  <p>Almost always: your edge cache is still serving the version cached <em>before</em> the addon was installed. Look for <code>cf-cache-status: HIT</code> in the response — that confirms the answer didn\'t come from EE just now.</p>
+  <div class="ect-callout ect-callout-info">
+    <span class="ect-label">Cache-bust</span>Run this to see fresh-from-origin:
+    <div class="ect-docs-code" style="margin:8px 0 0">curl -I "https://yoursite.com/page?nocache=$(date +%s)"</div>
+  </div>
+
+  <h4>Why don\'t archive pages evict when I save an entry?</h4>
+  <p>Addon versions before v2.4.19 had a bug where channel + category + path tags weren\'t dispatched on save (only <code>home + entry-N</code>). Archive pages had no matching tag, so they didn\'t evict. <strong>Upgrade to v2.4.19+</strong> — saves now dispatch the full set.</p>
+
+  <h4>Can I make up my own tags?</h4>
+  <p>Yes — see Pattern 4 above. Auto-purge only fires the standard tags. For custom taxonomies, use Quick actions on the Setup tab or call <code>Edge_cache_tags_ext::manual_purge_tags([\'your-tag\'])</code> from a custom extension.</p>
+
+  <h4>Can I disable the addon without CP access?</h4>
+  <p>Set <code>$config[\'edge_cache_tags_disable\'] = true;</code> in <code>config.php</code> or <code>assign_to_config</code>. The hooks short-circuit without touching the CP.</p>
+</section>
+
+<section class="ect-docs-section" id="d-companion">
+  <h3><span class="num">9.</span>Recommended companion: Add-on Manager</h3>
+  <div class="ect-companion">
+    <div class="ect-companion-icon">↻</div>
+    <div class="ect-companion-body">
+      <p style="margin:0 0 6px"><strong>If you maintain multiple EE installs</strong>, the free <a href="https://expressionengine.com/add-ons/addon-manager" target="_blank" rel="noopener">ExpressionEngine Add-on Manager</a> by EllisLab is excellent — it watches the EE store and GitHub releases for every installed add-on and shows a single "updates available" badge in the CP.</p>
+      <p style="margin:0">Edge Cache Tags ships its own GitHub-releases poller (so updates appear in this CP either way), but the Add-on Manager is the right umbrella tool when you\'re managing 10+ EE sites.</p>
+    </div>
+  </div>
+  <h4 style="margin-top:22px">More reading</h4>
+  <ul>
+    <li><a href="https://codebit.nl/edge-cache-ee/docs/" target="_blank" rel="noopener">Full documentation on codebit.nl</a> — same content, with more breathing room</li>
+    <li><a href="https://github.com/calimonk/ee-edge-cache-tags" target="_blank" rel="noopener">GitHub repository</a> — source, releases, issues, README</li>
+    <li><a href="https://github.com/calimonk/wp-edge-cache-tags" target="_blank" rel="noopener">Sister WordPress plugin</a> — same dispatch model</li>
+    <li><a href="https://nivoli.com/" target="_blank" rel="noopener">Nivoli</a> — managed full-page caching, pre-wired with this addon</li>
   </ul>
-  <p style="margin:8px 0 0;font-size:12.5px;color:#78350f;line-height:1.6">
-    None of this affects whether the addon actually <em>works</em> — front-end emits + purges still see the index.php values. It only affects what the CP visualizes.
-  </p>
-</div>
-<p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
-  <strong>Tip for Nivoli users:</strong> if you want one Nivoli endpoint serving multiple MSM hostnames (single dashboard URL covering all sites), ask Nivoli support to link your tokens — the per-site <code>site-&lt;id&gt;-</code> tag prefix routes purges to the right hostname automatically. Otherwise, each MSM site gets its own dashboard URL.
-</p>
+</section>
 
-<h4 style="margin:14px 0 4px;font-size:13.5px;font-weight:600;color:#1e293b">I curled my site and didn\'t see the headers — what gives?</h4>
-<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
-  Almost always: <strong>your edge cache is still serving the version it cached BEFORE the addon was installed</strong>. The addon only sets headers on responses EE renders fresh — pre-cached HITs carry whatever headers were there at the time of original caching. Look for <code>cf-cache-status: HIT</code> in the response — that confirms the answer didn\'t come from EE just now.
-</p>
-<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">
-  <strong>Note on <code>curl -I</code>:</strong> <code>-I</code> sends a HEAD request, not GET. Both should carry the same headers (RFC 7231); the addon supports HEAD as of v2.3.5. If you\'re on an older version, switch to <code>curl -i</code> (lowercase, GET with headers shown) instead.
-</p>
-<p style="margin:0 0 8px;font-size:13px;color:#475569;line-height:1.6">Bypass cache to see fresh-from-origin:</p>
-<pre style="background:#0f172a;color:#e2e8f0;padding:10px 14px;border-radius:6px;font-size:12px;font-family:ui-monospace,Menlo,monospace;overflow-x:auto;white-space:pre-wrap;word-break:break-word">curl -I "https://yoursite.com/some/page?nocache=$(date +%s)"</pre>
-<p style="margin:0 0 12px;font-size:13px;color:#475569;line-height:1.6">
-  The random query param defeats Cloudflare\'s cache key (and most reverse-proxies). Look for <code>Surrogate-Key:</code> and <code>Cache-Tag:</code> in the cache-busted response. If they\'re there, the addon is working — existing CF cache will start carrying them as pages naturally expire or get purged. If they\'re STILL missing on a cache-busted request, check the <strong>Diagnostics</strong> card above (extension hooks should be 4 enabled rows) and the <strong>Recent activity</strong> log; uninstall + reinstall is the recovery path.
-</p>
-
-<h3>Why <code>entry-&lt;id&gt;</code> and not <code>url_title</code> or the full URL?</h3>
-<ul>
-  <li><strong>Stability.</strong> Entry IDs never change. URL titles change when an editor edits a slug; URLs change when you reorganize taxonomies. Tags tied to IDs survive those edits.</li>
-  <li><strong>Cross-page coverage.</strong> The same entry appears on many URLs (single view, homepage, channel index, category archive, search). One <code>entry-N</code> tag intersects all of them — you don\'t maintain a separate "purge list" per page.</li>
-  <li><strong>Save-event compatibility.</strong> EE\'s <code>after_channel_entry_save</code> hook hands the addon the entry id. The addon can\'t look up "every URL this entry appears on" — but it can fire a single <code>entry-N</code> tag and trust the emit side did the binding.</li>
-</ul>
-
-<h3>What gets purged when content changes</h3>
-<p>When an editor hits <strong>Save</strong> on an entry (or deletes it), this addon dispatches purge for:</p>
-<ul>
-  <li><code>entry-&lt;id&gt;</code> — every page that featured this entry</li>
-  <li><code>channel-&lt;name&gt;</code> &amp; <code>path-&lt;name&gt;</code> — channel listing pages</li>
-  <li>One <code>category-&lt;cat_id&gt;</code> per category the entry belongs to — category archives</li>
-  <li><code>home</code> — the homepage (entries often appear there)</li>
-  <li>MSM site_id &gt; 1: all the above prefixed with <code>site-&lt;id&gt;-</code> for isolation</li>
-</ul>
-<p><strong>Notably NOT auto-purged: <code>all</code></strong>. Every page still emits the <code>all</code> tag so you can manually nuke the cache via the <strong>Quick actions</strong> panel — but firing it on every entry save would evict every cached page on every save, defeating the surgical-purge premise. Same goes for the MSM-scoped <code>site-&lt;id&gt;-all</code> tag.</p>
-<p>Multiple saves in the same CP request coalesce into <strong>one</strong> POST per backend. Bounded 5-second timeout — a slow edge never blocks a CP save for long.</p>
-
-<h3>config.php overrides (developers / config-as-code)</h3>
-<p style="margin-bottom:10px">All form settings can be pinned via <code>system/user/config/config.php</code>. Pinned values win over the CP form (the 🔒 lock indicator on the field shows you which). Pick whichever backend you\'re actually using:</p>
-' . $configExample . '
-
-<h3>Backend cheat-sheet</h3>
-<ul>
-  <li><strong>none</strong> — emit headers, dispatch nothing. Useful while you wire templates up or run a non-purging CDN.</li>
-  <li><strong>cloudflare</strong> — POSTs to the CF zone purge API with the <code>tags</code> array. Requires the Enterprise plan (Cache-Tag purging is gated). Tokens scoped to <em>Zone.Cache Purge</em> are enough.</li>
-  <li><strong>fastly</strong> — POSTs to <code>api.fastly.com/service/&lt;id&gt;/purge/&lt;key&gt;</code> per key (Surrogate-Key API). Works on Standard plans. Token needs <em>purge</em> permission.</li>
-  <li><strong>nivoli</strong> — one POST to your dashboard URL; Nivoli reads the tag list out of the body. Managed service with this addon pre-wired.</li>
-  <li><strong>webhook</strong> — your own endpoint. Body is JSON <code>{tags, site_id, source}</code>, optional <code>X-Edge-Cache-Tags-Signature</code> HMAC if you set a secret. Great for Varnish (vcl-driven) or a custom proxy.</li>
-</ul>
-
-<h3>More</h3>
-<ul>
-  <li><a href="https://github.com/calimonk/ee-edge-cache-tags" target="_blank" rel="noopener">GitHub README</a> — filter hooks, full MSM behavior, backend comparison table</li>
-  <li><a href="https://github.com/calimonk/ee-edge-cache-tags/blob/main/README.md#multi-site-manager-msm" target="_blank" rel="noopener">MSM section</a> — site-prefix isolation rules</li>
-  <li><a href="https://github.com/calimonk/ee-edge-cache-tags/blob/main/README.md#webhook-backend" target="_blank" rel="noopener">Webhook payload spec</a> — for hand-rolled edges</li>
-</ul>
 </div>';
     }
 }
