@@ -35,7 +35,7 @@ if (!defined('BASEPATH')) { exit('No direct script access allowed'); }
 
 class Edge_cache_tags_ext {
 
-    public $version = '2.4.24';
+    public $version = '2.4.25';
 
     const MAX_KEYS    = 50;
     const MAX_KEY_LEN = 64;
@@ -603,10 +603,16 @@ class Edge_cache_tags_ext {
         if (!$ch) {
             if ($logCtx) $this->log_purge($logCtx + array(
                 'url' => $url, 'http_status' => 0, 'duration_ms' => 0,
-                'response_excerpt' => '', 'error_msg' => 'curl_init failed',
+                'response_excerpt' => '', 'error_msg' => 'curl_init failed', 'cf_ray' => '',
             ));
             return;
         }
+        // v2.4.25 — capture response cf-ray for support cross-reference
+        // against the admin /lookup/ray endpoint. HEADERFUNCTION fires
+        // once per response header line; we scan for cf-ray and stash
+        // it. Cleaner than CURLOPT_HEADER which would put headers in
+        // the body and pollute response_excerpt.
+        $cfRay = '';
         curl_setopt_array($ch, array(
             CURLOPT_POST           => true,
             CURLOPT_POSTFIELDS     => $body,
@@ -616,6 +622,16 @@ class Edge_cache_tags_ext {
             CURLOPT_CONNECTTIMEOUT => 3,
             CURLOPT_USERAGENT      => 'edge-cache-tags-ee/' . $this->version,
             CURLOPT_FAILONERROR    => false,
+            CURLOPT_HEADERFUNCTION => function ($_ch, $line) use (&$cfRay) {
+                // Match "cf-ray: 8a3b…-AMS" (case-insensitive). Return
+                // the line length unchanged — curl uses the return
+                // value as a sanity check (must equal strlen($line)
+                // or the transfer aborts).
+                if ($cfRay === '' && stripos($line, 'cf-ray:') === 0) {
+                    $cfRay = trim(substr($line, 7));
+                }
+                return strlen($line);
+            },
         ));
         $started = microtime(true);
         $response = @curl_exec($ch);
@@ -630,6 +646,7 @@ class Edge_cache_tags_ext {
                 'duration_ms' => $duration_ms,
                 'response_excerpt' => is_string($response) ? substr($response, 0, 500) : '',
                 'error_msg' => (string) $error,
+                'cf_ray' => $cfRay,
             ));
         }
     }
@@ -656,6 +673,7 @@ class Edge_cache_tags_ext {
                 'duration_ms'=> (int) ($entry['duration_ms'] ?? 0),
                 'response_excerpt' => substr((string) ($entry['response_excerpt'] ?? ''), 0, 500),
                 'error_msg'  => substr((string) ($entry['error_msg'] ?? ''), 0, 200),
+                'cf_ray'     => substr((string) ($entry['cf_ray'] ?? ''), 0, 40),
             ));
             // Prune. One delete per insert is fine for small data; we'd
             // need to revisit if log volume crosses tens-of-thousands.

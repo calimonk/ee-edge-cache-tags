@@ -64,7 +64,7 @@ class Edge_cache_tags_upd extends Installer
         $row = ee()->db->where('module_name', 'Edge_cache_tags')
             ->get('modules')->row_array();
         $payload = [
-            'module_version'     => '2.4.24',
+            'module_version'     => '2.4.25',
             'has_cp_backend'     => 'y',
             'has_publish_fields' => 'n',
         ];
@@ -242,10 +242,20 @@ class Edge_cache_tags_upd extends Installer
                 'duration_ms'=> ['type' => 'INT', 'unsigned' => true, 'null' => false, 'default' => 0],
                 'response_excerpt' => ['type' => 'VARCHAR', 'constraint' => 500, 'null' => false, 'default' => ''],
                 'error_msg'  => ['type' => 'VARCHAR', 'constraint' => 200, 'null' => false, 'default' => ''],
+                'cf_ray'     => ['type' => 'VARCHAR', 'constraint' => 40,  'null' => false, 'default' => ''],
             ]);
             ee()->dbforge->add_key('id', true);
             ee()->dbforge->add_key(['site_id', 'created_at']);
             ee()->dbforge->create_table('edge_cache_tags_purge_log', true);
+        } else {
+            // v2.4.25 — migrate existing installs to add the cf_ray column.
+            // Idempotent: only ALTERs when the column is missing.
+            $cols = ee()->db->list_fields('edge_cache_tags_purge_log');
+            if (!in_array('cf_ray', (array) $cols, true)) {
+                ee()->dbforge->add_column('edge_cache_tags_purge_log', [
+                    'cf_ray' => ['type' => 'VARCHAR', 'constraint' => 40, 'null' => false, 'default' => ''],
+                ]);
+            }
         }
     }
 

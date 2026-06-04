@@ -1164,6 +1164,17 @@ HTML;
                 }
             }
 
+            // v2.4.25 — cf-ray chip. Shown when the Nivoli response
+            // returned one (always, when the request reached the edge).
+            // Lets support cross-reference a suspicious purge against the
+            // admin /lookup/ray endpoint.
+            $cfRay = (string) ($r['cf_ray'] ?? '');
+            $rayChip = '';
+            if ($cfRay !== '') {
+                $rayChip = ' <span style="color:#94a3b8;margin:0 6px">·</span>'
+                    . ' <span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#64748b" title="Cloudflare ray-id of the Nivoli response. Cross-reference in admin: /lookup/ray?ray=' . $h($cfRay) . '">cf-ray ' . $h($cfRay) . '</span>';
+            }
+
             $rowsHtml .= '<div style="display:grid;grid-template-columns:32px 1fr auto;gap:10px;padding:10px 0;border-bottom:1px solid #f1f5f9;align-items:center">'
                 . '<div style="width:28px;height:28px;border-radius:50%;background:' . $iconBg . ';display:flex;align-items:center;justify-content:center">' . $icon . '</div>'
                 . '<div style="font-size:13px;line-height:1.5">'
@@ -1173,6 +1184,7 @@ HTML;
                 .       ' ' . $statusLabel
                 .       ' <span style="color:#94a3b8;margin:0 6px">·</span>'
                 .       ' <span style="color:#64748b;font-size:12px">' . (int) $r['duration_ms'] . 'ms</span>'
+                .       $rayChip
                 .   '</div>'
                 .   '<div>' . $tagPreview . '</div>'
                 . '</div>'
