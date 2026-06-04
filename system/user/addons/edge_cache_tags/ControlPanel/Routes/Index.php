@@ -1175,7 +1175,16 @@ HTML;
                     . ' <span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#64748b" title="Cloudflare ray-id of the Nivoli response. Cross-reference in admin: /lookup/ray?ray=' . $h($cfRay) . '">cf-ray ' . $h($cfRay) . '</span>';
             }
 
-            $rowsHtml .= '<div style="display:grid;grid-template-columns:32px 1fr auto;gap:10px;padding:10px 0;border-bottom:1px solid #f1f5f9;align-items:center">'
+            // v2.4.26 — info icon + per-row Details expander. Click toggles
+            // a panel showing the actual HTTP request that fired, the
+            // response (status + cf-ray + excerpt), and plain-English
+            // explanations of what each tag in this purge evicts. Lets
+            // an operator answer "what does `home` actually flush?" in
+            // one click instead of cross-referencing the docs.
+            $rowId = (int) $r['id'];
+            $detailsPanel = $this->renderActivityRowDetails($r, $tagsArr, $rowId);
+
+            $rowsHtml .= '<div style="display:grid;grid-template-columns:32px 1fr auto auto;gap:10px;padding:10px 0;border-bottom:1px solid #f1f5f9;align-items:center">'
                 . '<div style="width:28px;height:28px;border-radius:50%;background:' . $iconBg . ';display:flex;align-items:center;justify-content:center">' . $icon . '</div>'
                 . '<div style="font-size:13px;line-height:1.5">'
                 .   '<div style="margin-bottom:3px">' . $backendChip
@@ -1192,7 +1201,11 @@ HTML;
                 .   $h($relTime((int) $r['created_at']))
                 .   '<div style="font-size:11px;margin-top:2px">' . $h($hostFromUrl) . '</div>'
                 . '</div>'
+                . '<button type="button" class="ect-row-info" data-target="ect-row-details-' . $rowId . '" '
+                .   'style="background:transparent;border:1px solid #cbd5e1;color:#64748b;width:26px;height:26px;border-radius:50%;font-size:13px;line-height:1;cursor:pointer;padding:0;font-family:inherit" '
+                .   'title="Show request + response + per-tag detail">ⓘ</button>'
                 . $detail
+                . $detailsPanel
                 . '</div>';
         }
 
@@ -1202,9 +1215,138 @@ HTML;
             .   '<h2 style="margin:0">Recent activity</h2>'
             .   '<span style="font-size:12px;color:#64748b">last ' . $total . ' purge' . ($total == 1 ? '' : 's') . ' for this site</span>'
             . '</div>'
-            . '<p style="margin:0 0 14px;color:#64748b;font-size:13px">Every purge dispatched by this addon. Use it to confirm saves are firing, debug a misconfigured backend, or see what your edge is being told to evict.</p>'
+            . '<p style="margin:0 0 14px;color:#64748b;font-size:13px">Every purge dispatched by this addon. Use it to confirm saves are firing, debug a misconfigured backend, or see what your edge is being told to evict. Click the <strong>ⓘ</strong> on any row for the full request + response + per-tag detail.</p>'
             . $rowsHtml
+            . '<script>(function(){var btns=document.querySelectorAll(".ect-row-info");for(var i=0;i<btns.length;i++){btns[i].addEventListener("click",function(e){e.preventDefault();var t=document.getElementById(this.getAttribute("data-target"));if(t){var open=t.style.display!=="none";t.style.display=open?"none":"block";this.style.background=open?"transparent":"#e0e7ff";this.style.borderColor=open?"#cbd5e1":"#6366f1";this.style.color=open?"#64748b":"#4338ca";}});}})();</script>'
             . '</div>';
+    }
+
+    /**
+     * v2.4.26 — per-row details expander. Hidden by default; toggled
+     * by the ⓘ button. Shows the actual HTTP request, the response
+     * we got back, and a plain-English explanation of each tag in
+     * the purge.
+     */
+    private function renderActivityRowDetails(array $r, array $tagsArr, int $rowId): string
+    {
+        $h = fn($v) => htmlspecialchars((string) $v);
+        $backend = (string) ($r['backend'] ?? '');
+        $url     = (string) ($r['target_url'] ?? '');
+        $status  = (int) ($r['http_status'] ?? 0);
+        $duration = (int) ($r['duration_ms'] ?? 0);
+        $cfRay   = (string) ($r['cf_ray'] ?? '');
+        $excerpt = (string) ($r['response_excerpt'] ?? '');
+        $err     = (string) ($r['error_msg'] ?? '');
+
+        // Reconstruct the request body based on the backend's shape.
+        // We don't store the raw body (it's deterministic from tags), so
+        // this is built from the stored tag list. For Fastly the API
+        // sends tags via Surrogate-Key header, not a JSON body — call
+        // that out separately.
+        $bodyJson = json_encode(['tags' => array_values($tagsArr)], JSON_UNESCAPED_SLASHES);
+        $isFastly = (strtolower($backend) === 'fastly');
+
+        $requestBlock = '';
+        if ($isFastly) {
+            $requestBlock = 'POST ' . $h($url) . "\n"
+                . 'Surrogate-Key: ' . $h(implode(' ', $tagsArr)) . "\n"
+                . '(no body — Fastly reads keys from the header)';
+        } else {
+            $requestBlock = 'POST ' . $h($url) . "\n"
+                . 'Content-Type: application/json' . "\n\n"
+                . $h($bodyJson);
+        }
+
+        // curl equivalent. Use single-quoted args so JSON braces don't
+        // need bash escaping. Note: this is what fired during this
+        // dispatch — replaying it now would fire a NEW purge.
+        $curlCmd = '';
+        if ($isFastly) {
+            $curlCmd = "curl -X POST '" . str_replace("'", "'\\''", $url) . "' \\\n"
+                . "  -H 'Surrogate-Key: " . str_replace("'", "'\\''", implode(' ', $tagsArr)) . "'";
+        } else {
+            $curlCmd = "curl -X POST '" . str_replace("'", "'\\''", $url) . "' \\\n"
+                . "  -H 'Content-Type: application/json' \\\n"
+                . "  -d '" . str_replace("'", "'\\''", $bodyJson) . "'";
+        }
+
+        // Response block.
+        $responseLine = $err !== ''
+            ? 'ERROR: ' . $h($err)
+            : ('HTTP ' . $status . ' · ' . $duration . 'ms'
+                . ($cfRay !== '' ? ' · cf-ray ' . $h($cfRay) : ''));
+        $responseBody = $excerpt !== '' ? $h($excerpt) : '<span style="color:#64748b">(no body captured)</span>';
+
+        // Per-tag explainer. Same logic shared with the WP plugin (v2.4.17).
+        $tagMeaning = function (string $tag): string {
+            if ($tag === 'all')  return 'Every cached page on this site — site-wide eviction.';
+            if ($tag === 'home') return 'The homepage (URL: <code>/</code>).';
+            // MSM site-N prefix — strip and recurse for the bare meaning.
+            if (preg_match('/^site-(\d+)-(.+)$/', $tag, $m)) {
+                $bareMeaning = $this->tagMeaningPlain($m[2]);
+                return 'MSM site <strong>' . htmlspecialchars($m[1]) . '</strong> scope — ' . $bareMeaning;
+            }
+            return $this->tagMeaningPlain($tag);
+        };
+
+        $tagRows = '';
+        foreach ($tagsArr as $t) {
+            $tagRows .= '<tr>'
+                . '<td style="padding:4px 10px 4px 0;font-family:ui-monospace,Menlo,monospace;color:#fcd34d;white-space:nowrap;vertical-align:top">' . $h($t) . '</td>'
+                . '<td style="padding:4px 0;color:#cbd5e1;line-height:1.55">' . $tagMeaning($t) . '</td>'
+                . '</tr>';
+        }
+
+        $cfRayLink = '';
+        if ($cfRay !== '') {
+            // Customer-side: link to /lookup/ray on the same tenant dashboard.
+            // (The cf-ray on a purge response is from Nivoli's edge, so the
+            // matching analytics event is on the customer's tenant scope.)
+            $cfRayLink = '<div style="margin-top:8px;font-size:11.5px;color:#94a3b8">'
+                . 'Cross-reference this purge in the Nivoli dashboard: '
+                . '<a href="https://console.nivoli.com/cache/" target="_blank" rel="noopener" style="color:#7dd3fc">/lookup/ray?ray=' . $h($cfRay) . '</a>'
+                . '</div>';
+        }
+
+        return '<div id="ect-row-details-' . $rowId . '" style="display:none;grid-column:2 / -1;margin-top:10px;background:#0f172a;color:#e2e8f0;border-radius:6px;padding:14px 16px;font-size:12.5px;line-height:1.6;border:1px solid #1e293b">'
+            . '<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:0.06em;color:#7dd3fc;font-weight:600;margin-bottom:4px">Request</div>'
+            . '<pre style="margin:0 0 8px;padding:8px 10px;background:#020617;border-radius:4px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;white-space:pre-wrap;word-break:break-word;color:#e2e8f0">' . $requestBlock . '</pre>'
+            . '<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;margin:4px 0 2px">curl equivalent</div>'
+            . '<pre style="margin:0 0 12px;padding:8px 10px;background:#020617;border-radius:4px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;white-space:pre-wrap;word-break:break-word;color:#86efac">' . $h($curlCmd) . '</pre>'
+
+            . '<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:0.06em;color:#7dd3fc;font-weight:600;margin-bottom:4px">Response</div>'
+            . '<div style="padding:8px 10px;background:#020617;border-radius:4px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:#e2e8f0;margin-bottom:4px">' . $responseLine . '</div>'
+            . '<pre style="margin:0 0 12px;padding:8px 10px;background:#020617;border-radius:4px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;white-space:pre-wrap;word-break:break-word;color:#cbd5e1;max-height:140px;overflow:auto">' . $responseBody . '</pre>'
+            . $cfRayLink
+
+            . '<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:0.06em;color:#7dd3fc;font-weight:600;margin:14px 0 6px">Tags purged · what each one evicts</div>'
+            . '<table style="border-collapse:collapse;width:100%">' . $tagRows . '</table>'
+            . '</div>';
+    }
+
+    /**
+     * Plain-English meaning of a single tag for the activity-row details
+     * expander. Returns an HTML-safe string (caller does not need to
+     * escape; the patterns here only inject already-validated tag
+     * fragments).
+     */
+    private function tagMeaningPlain(string $tag): string
+    {
+        if ($tag === 'all')  return 'Every cached page on this site — site-wide eviction.';
+        if ($tag === 'home') return 'The homepage (URL: <code>/</code>).';
+        if (preg_match('/^entry-(\d+)$/', $tag, $m)) {
+            return 'Pages featuring entry <strong>#' . htmlspecialchars($m[1]) . '</strong> — typically the single-entry view, plus any listing template that declared <code>{exp:edge_cache_tags:key name="entry-' . htmlspecialchars($m[1]) . '"}</code>.';
+        }
+        if (preg_match('/^channel-([\w-]+)$/', $tag, $m)) {
+            return 'Pages declared via <code>{exp:edge_cache_tags:key name="channel-' . htmlspecialchars($m[1]) . '"}</code> — the channel index and any embedded loops of channel <strong>' . htmlspecialchars($m[1]) . '</strong>.';
+        }
+        if (preg_match('/^path-([\w-]+)$/', $tag, $m)) {
+            return 'Every URL whose first path segment is <strong>/' . htmlspecialchars($m[1]) . '/</strong> — including paginated variants like <code>/' . htmlspecialchars($m[1]) . '/P20</code>. Auto-emitted from the URL on every render.';
+        }
+        if (preg_match('/^category-(\d+)$/', $tag, $m)) {
+            return 'Pages declared via <code>{exp:edge_cache_tags:key name="category-' . htmlspecialchars($m[1]) . '"}</code> — typically the category archive and entry views in that category.';
+        }
+        return 'Custom tag, declared via <code>{exp:edge_cache_tags:key}</code> in your templates.';
     }
 
     /**
