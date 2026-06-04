@@ -1217,6 +1217,15 @@ HTML;
             . '</div>'
             . '<p style="margin:0 0 14px;color:#64748b;font-size:13px">Every purge dispatched by this addon. Use it to confirm saves are firing, debug a misconfigured backend, or see what your edge is being told to evict. Click the <strong>ⓘ</strong> on any row for the full request + response + per-tag detail.</p>'
             . $rowsHtml
+            // v2.4.27 — scoped CSS overrides for the details panels. EE's
+            // CP injects table + code defaults (white bg, dark text) that
+            // bleed through the dark navy panel. Force the dark theme
+            // inside .ect-row-details-panel only — !important to win
+            // against the CP's own specificity.
+            . '<style>'
+            .   '.ect-row-details-panel code { background:#1e293b !important; color:#86efac !important; padding:1px 6px !important; border-radius:3px !important; font-family:ui-monospace,Menlo,Consolas,monospace !important; font-size:11.5px !important; border:none !important; }'
+            .   '.ect-row-details-panel table, .ect-row-details-panel tr, .ect-row-details-panel td, .ect-row-details-panel th { background:transparent !important; border:none !important; color:inherit; }'
+            . '</style>'
             . '<script>(function(){var btns=document.querySelectorAll(".ect-row-info");for(var i=0;i<btns.length;i++){btns[i].addEventListener("click",function(e){e.preventDefault();var t=document.getElementById(this.getAttribute("data-target"));if(t){var open=t.style.display!=="none";t.style.display=open?"none":"block";this.style.background=open?"transparent":"#e0e7ff";this.style.borderColor=open?"#cbd5e1":"#6366f1";this.style.color=open?"#64748b":"#4338ca";}});}})();</script>'
             . '</div>';
     }
@@ -1289,11 +1298,15 @@ HTML;
             return $this->tagMeaningPlain($tag);
         };
 
+        // EE's CP styles `.ect-card table` with a white background and
+        // dark text. We're embedding inside a dark navy panel, so override
+        // explicitly — both on the table AND each tr/td/code so we don't
+        // get stripes of light background bleeding through.
         $tagRows = '';
         foreach ($tagsArr as $t) {
-            $tagRows .= '<tr>'
-                . '<td style="padding:4px 10px 4px 0;font-family:ui-monospace,Menlo,monospace;color:#fcd34d;white-space:nowrap;vertical-align:top">' . $h($t) . '</td>'
-                . '<td style="padding:4px 0;color:#cbd5e1;line-height:1.55">' . $tagMeaning($t) . '</td>'
+            $tagRows .= '<tr style="background:transparent">'
+                . '<td style="padding:4px 10px 4px 0;font-family:ui-monospace,Menlo,monospace;color:#fcd34d;white-space:nowrap;vertical-align:top;background:transparent;border:none">' . $h($t) . '</td>'
+                . '<td style="padding:4px 0;color:#cbd5e1;line-height:1.55;background:transparent;border:none">' . $tagMeaning($t) . '</td>'
                 . '</tr>';
         }
 
@@ -1308,7 +1321,7 @@ HTML;
                 . '</div>';
         }
 
-        return '<div id="ect-row-details-' . $rowId . '" style="display:none;grid-column:2 / -1;margin-top:10px;background:#0f172a;color:#e2e8f0;border-radius:6px;padding:14px 16px;font-size:12.5px;line-height:1.6;border:1px solid #1e293b">'
+        return '<div class="ect-row-details-panel" id="ect-row-details-' . $rowId . '" style="display:none;grid-column:2 / -1;margin-top:10px;background:#0f172a;color:#e2e8f0;border-radius:6px;padding:14px 16px;font-size:12.5px;line-height:1.6;border:1px solid #1e293b">'
             . '<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:0.06em;color:#7dd3fc;font-weight:600;margin-bottom:4px">Request</div>'
             . '<pre style="margin:0 0 8px;padding:8px 10px;background:#020617;border-radius:4px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;white-space:pre-wrap;word-break:break-word;color:#e2e8f0">' . $requestBlock . '</pre>'
             . '<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;margin:4px 0 2px">curl equivalent</div>'
@@ -1320,7 +1333,7 @@ HTML;
             . $cfRayLink
 
             . '<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:0.06em;color:#7dd3fc;font-weight:600;margin:14px 0 6px">Tags purged · what each one evicts</div>'
-            . '<table style="border-collapse:collapse;width:100%">' . $tagRows . '</table>'
+            . '<table style="border-collapse:collapse;width:100%;background:transparent">' . $tagRows . '</table>'
             . '</div>';
     }
 

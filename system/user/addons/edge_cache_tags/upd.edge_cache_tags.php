@@ -64,7 +64,7 @@ class Edge_cache_tags_upd extends Installer
         $row = ee()->db->where('module_name', 'Edge_cache_tags')
             ->get('modules')->row_array();
         $payload = [
-            'module_version'     => '2.4.26',
+            'module_version'     => '2.4.27',
             'has_cp_backend'     => 'y',
             'has_publish_fields' => 'n',
         ];
