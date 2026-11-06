@@ -230,6 +230,17 @@ $config['edge_cache_tags_origin_lock'] = 'monitor'; // then 'enforce'; 'off' dis
 $config['edge_cache_tags_origin_local'] = ['203.0.113.10'];
 ```
 
+**Switching it on (2.5.1).** Setting the config is not enough on its own:
+open the add-on's **Status** tab in the control panel and click
+**Reinstall hooks**. That registers the lock's `sessions_start` hook, and
+only from a web request whose PHP already runs this version of the add-on
+(the CLI never registers it, and the button refuses while PHP still has
+the previous version cached). Without the config the hook is removed, so a
+site that does not use the lock never runs it. This is what went wrong in
+2.5.0: it registered the hook on every install and update, and an update
+through `eecli.php` while PHP-FPM's OPcache still held the old extension
+class made every request fail.
+
 - **monitor** (the default when secrets are set and no mode is): a request
   without the right secret is served and logged to PHP's error log
   (`[edge_cache_tags] origin lock would refuse (monitor): ...`). Run it for
@@ -258,6 +269,24 @@ A **purge token** (Nivoli console, Purge tokens) is the healthy setup for
 this add-on: it purges and nothing else, so the page says so and does not
 fetch statistics (they live in the console). The site's **full-access
 token** gets a warning with the steps to swap it.
+
+## Updating on a live server
+
+PHP-FPM keeps compiled PHP in OPcache and, with `opcache.revalidate_freq`
+above 0, keeps running the previous files for that many seconds after you
+copy new ones (300 on some hosts). EE reads the database right away, so a
+mix of old code and new database rows is possible during that window.
+
+1. Copy the new `system/user/addons/edge_cache_tags/` over the old one.
+2. Reset PHP-FPM's OPcache for the pool that serves the site (for example
+   `cachetool opcache:reset --fcgi=/var/run/php-fpm/<pool>.sock`, or reload
+   PHP-FPM), or wait `opcache.revalidate_freq` seconds.
+3. Then run the update: **Update** on the CP Add-ons page, or
+   `php system/ee/eecli.php addons:update edge_cache_tags`.
+
+From 2.5.1 an update registers no hook that the old code lacks, so skipping
+step 2 is no longer fatal for this add-on; it is still the safe order for
+any EE add-on.
 
 ## Filters / extension points
 

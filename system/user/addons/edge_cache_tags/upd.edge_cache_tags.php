@@ -28,6 +28,7 @@ class Edge_cache_tags_upd extends Installer
         $this->ensureModuleRow();
         $this->ensureMenuItem();
         $this->ensureExtensionHooks();
+        $this->ensureOriginLockHook();
         $this->createTables();
         $this->seedSettings();
         return true;
@@ -48,6 +49,7 @@ class Edge_cache_tags_upd extends Installer
         $this->ensureModuleRow();
         $this->ensureMenuItem();
         $this->ensureExtensionHooks();
+        $this->ensureOriginLockHook();
         $this->createTables();
         $this->seedSettings();
         return true;
@@ -64,7 +66,7 @@ class Edge_cache_tags_upd extends Installer
         $row = ee()->db->where('module_name', 'Edge_cache_tags')
             ->get('modules')->row_array();
         $payload = [
-            'module_version'     => '2.5.0',
+            'module_version'     => '2.5.1',
             'has_cp_backend'     => 'y',
             'has_publish_fields' => 'n',
         ];
@@ -171,6 +173,53 @@ class Edge_cache_tags_upd extends Installer
                 ee()->db->insert('extensions', $payload);
             }
         }
+    }
+
+    /**
+     * The origin lock's sessions_start row (v2.5.1). Not in the manifest:
+     * EE runs sessions_start on every request, so a row whose method the
+     * running PHP does not have takes the whole site down (2.5.0 on the game
+     * sites: files copied, `eecli.php addons:update` registered the row, and
+     * PHP-FPM's OPcache kept serving the 2.4.27 class for up to 300 seconds).
+     *
+     *   - Lock not configured (no edge_cache_tags_origin_secrets, or mode
+     *     off): no row. A site that does not use the lock never runs it, and
+     *     an update of such a site cannot break it this way.
+     *   - Configured and the row is there: keep it, bump its version.
+     *   - Configured, no row: register it only from a WEB request whose
+     *     loaded Edge_cache_tags_ext has sessions_start, i.e. the PHP that
+     *     serves the site already runs the new code. The CLI has its own
+     *     OPcache (or none) and proves nothing about PHP-FPM's, so it never
+     *     registers; the CP's Status tab offers the button.
+     *
+     * Returns off, registered, pending (configured, run from the CLI) or
+     * stale (configured, but this PHP still has the previous class).
+     */
+    public function ensureOriginLockHook(): string
+    {
+        if (!ee()->db->table_exists('extensions')) return 'off';
+        require_once __DIR__ . '/OriginLock.php';
+        $cfg = \EdgeCacheTags\OriginLock::config(function ($k) { return ee()->config->item($k); });
+        $where = ['class' => 'Edge_cache_tags_ext', 'hook' => 'sessions_start'];
+        if ($cfg['mode'] === 'off' || !$cfg['secrets']) {
+            ee()->db->where($where)->delete('extensions');
+            return 'off';
+        }
+        $manifest = include __DIR__ . '/addon.setup.php';
+        $version = (string) ($manifest['version'] ?? '0');
+        $exists = (int) ee()->db->where($where)->count_all_results('extensions');
+        if ($exists > 0) {
+            ee()->db->where($where)->update('extensions', ['version' => $version, 'enabled' => 'y', 'priority' => 1]);
+            return 'registered';
+        }
+        if (PHP_SAPI === 'cli' || PHP_SAPI === 'phpdbg') return 'pending';
+        if (!class_exists('Edge_cache_tags_ext', false)) require_once __DIR__ . '/ext.edge_cache_tags.php';
+        if (!method_exists('Edge_cache_tags_ext', 'sessions_start')) return 'stale';
+        ee()->db->insert('extensions', [
+            'class' => 'Edge_cache_tags_ext', 'method' => 'sessions_start', 'hook' => 'sessions_start',
+            'settings' => '', 'priority' => 1, 'version' => $version, 'enabled' => 'y',
+        ]);
+        return 'registered';
     }
 
     public function uninstall()
