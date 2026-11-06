@@ -206,6 +206,59 @@ dashboard URL then accepts purges for all linked hostnames, and the
 needed — one service / zone / endpoint serves all MSM sites; tag
 prefixing keeps them apart.
 
+## Origin lock (Nivoli, v2.5.0)
+
+The Nivoli edge stamps every request it forwards with your site's secret in
+an `x-nivoli-origin` header. With the origin lock on, EE refuses requests
+that do not carry it, so nobody can skip the edge (its shields and Gate
+doors) by talking to your server directly. It runs in `sessions_start`,
+before EE resolves a member, a control panel route or an `ACT` action.
+
+Set it in `system/user/config/config.php`. The secrets are per **host**
+(one EE install can serve several MSM hosts; a host without a secret is
+not checked):
+
+```php
+$config['edge_cache_tags_origin_secrets'] = [
+    'www.example.com' => '<32 hex characters, from the Nivoli console>',
+    // several are allowed: a rotation, or a second edge host that forwards here
+    'shop.example.com' => ['<current>', '<previous>'],
+];
+$config['edge_cache_tags_origin_lock'] = 'monitor'; // then 'enforce'; 'off' disables
+// Optional: more addresses of this server (127.0.0.1, ::1 and SERVER_ADDR
+// are always included) whose own requests WITHOUT the header pass.
+$config['edge_cache_tags_origin_local'] = ['203.0.113.10'];
+```
+
+- **monitor** (the default when secrets are set and no mode is): a request
+  without the right secret is served and logged to PHP's error log
+  (`[edge_cache_tags] origin lock would refuse (monitor): ...`). Run it for
+  a day and read the log before you enforce.
+- **enforce**: such a request gets `421 Misdirected Request`, not cached.
+- **Never checked:** the command line (cron jobs, `eecli.php`, import and
+  sitemap scripts that bootstrap EE), hosts without a secret, and requests
+  from the server itself that carry no header (loopback health checks). A
+  local request with a *wrong* header is refused, which is how you test it.
+- `REMOTE_ADDR` must be the real peer, or what nginx/Apache real-IP handling
+  makes of it when it trusts only Cloudflare's ranges.
+- The same rules as the nginx `map` snippet Nivoli hands out, so both can
+  run at once. EE's `?ACT=css` / `?ACT=js` stylesheet requests are served
+  before EE starts a session and are not checked here.
+- The **Status** tab shows the mode, the hosts with a secret (never the
+  secret), and whether the page you are looking at came through the edge
+  with the right secret.
+- Nivoli Gate's signed per-request assertion (a later Gate phase) will be
+  verified at the same place, after the secret (`OriginLock::decide`,
+  `$cfg['assertion']`).
+
+### Token scope
+
+The Setup tab asks Nivoli what the token in your dashboard URL may do.
+A **purge token** (Nivoli console, Purge tokens) is the healthy setup for
+this add-on: it purges and nothing else, so the page says so and does not
+fetch statistics (they live in the console). The site's **full-access
+token** gets a warning with the steps to swap it.
+
 ## Filters / extension points
 
 The extension doesn't expose its own EE hooks; logic is straight-line
@@ -220,7 +273,12 @@ PHP. To customize:
 
 ```bash
 php tests/test-keys.php
+php tests/test-origin-lock.php
 ```
+
+`test-origin-lock.php` covers the origin lock's decisions (the edge, host
+spellings, the command line, loopback, config mistakes, the assertion hook,
+the log line).
 
 32 assertions covering:
 - `keys_for_request` derivation (homepage, deep URIs, template-context
