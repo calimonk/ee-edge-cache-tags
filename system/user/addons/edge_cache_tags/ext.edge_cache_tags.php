@@ -35,7 +35,7 @@ if (!defined('BASEPATH')) { exit('No direct script access allowed'); }
 
 class Edge_cache_tags_ext {
 
-    public $version = '2.4.27';
+    public $version = '2.5.0';
 
     const MAX_KEYS    = 50;
     const MAX_KEY_LEN = 64;
@@ -51,6 +51,30 @@ class Edge_cache_tags_ext {
 
     public function __construct() {
         // EE instantiates extensions without args.
+    }
+
+    // ---- Origin lock (v2.5.0, Nivoli Gate phase 6) -------------------------
+
+    /**
+     * sessions_start($session): refuse requests that skipped the Nivoli
+     * edge, before EE resolves a member, a CP route or an ACT action. The
+     * rules and the config are in OriginLock.php. A config with no secrets
+     * is "off": nothing is checked and nothing is read but three config
+     * items. Never throws: a broken lock must not take the site down, and
+     * an error here is logged and lets the request through.
+     */
+    public function sessions_start($session = null) {
+        try {
+            require_once __DIR__ . '/OriginLock.php';
+            $cfg = \EdgeCacheTags\OriginLock::config(function ($k) { return ee()->config->item($k); });
+            $d = \EdgeCacheTags\OriginLock::decide($_SERVER, $cfg);
+            \EdgeCacheTags\OriginLock::$last = $d + ['mode' => $cfg['mode']];
+            if ($d['act'] === 'none') return;
+            error_log(\EdgeCacheTags\OriginLock::logLine($d, $_SERVER));
+            if ($d['act'] === 'refuse') \EdgeCacheTags\OriginLock::refuse();
+        } catch (\Throwable $e) {
+            error_log('[edge_cache_tags] origin lock skipped: ' . $e->getMessage());
+        }
     }
 
     // ---- Config ----------------------------------------------------------

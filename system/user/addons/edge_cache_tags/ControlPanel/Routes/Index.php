@@ -237,18 +237,25 @@ class Index extends AbstractRoute
             'class'   => 'Edge_cache_tags_ext',
             'enabled' => 'y',
         ])->count_all_results('extensions');
-        $hookDetail = $hookRows . ' enabled row(s) — expected 4 (cp_custom_menu, template_post_parse, after_channel_entry_save, after_channel_entry_delete)';
-        if ($hookRows < 4) {
-            $hookDetail .= ' — headers will not emit and purges will not dispatch. Click "Reinstall hooks" below, or run Update on the Add-Ons listing.';
+        // v2.5.0: the expected set comes from the manifest (it gained
+        // sessions_start for the origin lock), not a hard-coded 4.
+        $manifest = include dirname(__DIR__, 2) . '/addon.setup.php';
+        $wantHooks = array_map(fn($x) => (string) ($x['hook'] ?? ''), (array) ($manifest['hooks'] ?? []));
+        $hookDetail = $hookRows . ' enabled row(s), expected ' . count($wantHooks) . ' (' . implode(', ', $wantHooks) . ')';
+        if ($hookRows < count($wantHooks)) {
+            $hookDetail .= '. Headers may not emit, purges may not dispatch and the origin lock may not run. Click "Reinstall hooks" below, or run Update on the Add-Ons listing.';
         }
         $checks[] = [
             'label'  => 'Extension hooks',
-            'ok'     => $hookRows >= 4,
+            'ok'     => $hookRows >= count($wantHooks),
             'detail' => $hookDetail,
             // Tells the renderer to append a reinstall-hooks button row
             // when this check is failing.
-            'action' => $hookRows < 4 ? 'reinstall_hooks' : null,
+            'action' => $hookRows < count($wantHooks) ? 'reinstall_hooks' : null,
         ];
+
+        // 2a. Origin lock (v2.5.0): config.php only, see OriginLock.php.
+        $checks[] = $this->originLockCheck();
 
         // 2b. Sidebar menu item — type='addon' rows are rendered directly
         // by core EE; the row's `data` field is the URL slug. Must be the
@@ -313,6 +320,46 @@ class Index extends AbstractRoute
         ];
 
         return ['checks' => $checks, 'effective' => $effective, 'sample_keys' => $this->sampleKeys($siteId)];
+    }
+
+    /**
+     * The origin lock's state for the Status tab: the mode, the hosts that
+     * have a secret (never the secret), and what the lock decided for THIS
+     * CP request, which shows whether the edge stamps the right secret.
+     */
+    private function originLockCheck(): array
+    {
+        require_once dirname(__DIR__, 2) . '/OriginLock.php';
+        $cfg = \EdgeCacheTags\OriginLock::config(function ($k) { return ee()->config->item($k); });
+        $host = \EdgeCacheTags\OriginLock::hostOf($_SERVER);
+        $last = \EdgeCacheTags\OriginLock::$last;
+        $hosts = array_keys($cfg['secrets']);
+        $bad = $cfg['invalid'];
+        if ($cfg['mode'] === 'off' || !$hosts) {
+            return [
+                'label'  => 'Origin lock',
+                'ok'     => !$bad,
+                'detail' => 'off. Set edge_cache_tags_origin_secrets (and edge_cache_tags_origin_lock) in config.php to refuse requests that skip the Nivoli edge.'
+                    . ($bad ? ' Ignored: ' . implode('; ', $bad) . '.' : ''),
+            ];
+        }
+        $here = isset($cfg['secrets'][$host]);
+        $why = [
+            'secret' => 'this page came through the edge with the right secret',
+            'local' => 'this page came from the server itself, without the header',
+            'no-header' => 'this page came WITHOUT the secret header (not through the edge, or the edge has no secret for ' . $host . ')',
+            'wrong-secret' => 'this page came with a secret that does not match (rotated? check the Nivoli console)',
+            'unlisted-host' => $host . ' has no secret here, so it is not checked',
+        ];
+        $seen = $last ? ($why[$last['reason']] ?? $last['reason']) : 'the lock did not run on this page (sessions_start hook missing? see Extension hooks)';
+        $miss = $last && $last['verdict'] === 'miss';
+        return [
+            'label'  => 'Origin lock',
+            'ok'     => !$bad && $last !== null && !$miss,
+            'detail' => $cfg['mode'] . ' for ' . implode(', ', $hosts) . '. ' . ucfirst($seen) . '.'
+                . (!$here ? ' (This CP is on ' . $host . '.)' : '')
+                . ($bad ? ' Ignored: ' . implode('; ', $bad) . '.' : ''),
+        ];
     }
 
     private function effectiveSettings(array $row, array $overrides): array
@@ -401,6 +448,18 @@ class Index extends AbstractRoute
         $hostScopeBanner = '';
         if ($effBackend === 'nivoli') {
             $effEndpoint = $overrides['nivoli_endpoint'] ?? ($r['nivoli_endpoint'] ?? '');
+            // v2.5.0: what the token in the endpoint may do. A purge token
+            // (made in the Nivoli console) is the healthy setup for this
+            // add-on: it purges and nothing else, so the statistics below
+            // are not fetched (Nivoli would refuse them) and the banner says
+            // so instead of staying empty.
+            $scope = $effEndpoint !== '' ? $this->fetchNivoliTokenScope($effEndpoint) : null;
+            if ($scope !== null && $scope['scope'] === 'purge') {
+                $hostScopeBanner = $this->renderTokenScopeBanner($scope);
+                $effEndpoint = '';
+            } elseif ($scope !== null && $scope['scope'] === 'config') {
+                $hostScopeBanner = $this->renderTokenScopeBanner($scope);
+            }
             if ($effEndpoint !== '') {
                 // v2.4.22 — prefer the multi-window hero (one round
                 // trip, four windows side-by-side with local purge
@@ -418,7 +477,7 @@ class Index extends AbstractRoute
                 // v2.4.18: surface the token's host scope so a misconfig
                 // (wrong dashboard URL pasted) is obvious at render time
                 // rather than diagnosed via empty stats / failing purges.
-                $hostScopeBanner = $this->renderHostScopeBanner($effEndpoint);
+                $hostScopeBanner .= $this->renderHostScopeBanner($effEndpoint);
             }
         }
 
@@ -1688,6 +1747,59 @@ HTML;
      * exact mistake the operator just hit: pasted a token whose scope
      * didn't include the current EE site's host.
      */
+    /**
+     * v2.5.0: the endpoint token's scope, from Nivoli's plugin-status
+     * (which every token scope may call): ['scope' => purge|read|config,
+     * 'hostname' => ...], or null when Nivoli cannot say (unreachable, an
+     * older Nivoli, a token for another host). Memoized per request.
+     */
+    private static $scope_cache = [];
+    private function fetchNivoliTokenScope(string $endpoint): ?array
+    {
+        $hostQs = $this->nivoliHostQs();
+        $key = $endpoint . '|' . $hostQs;
+        if (array_key_exists($key, self::$scope_cache)) return self::$scope_cache[$key];
+        $url = rtrim($endpoint, '/') . '/plugin-status' . ($hostQs !== '' ? '?host=' . $hostQs : '');
+        $ch = curl_init($url);
+        if (!$ch) return null;
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 3,
+            CURLOPT_CONNECTTIMEOUT => 2,
+            CURLOPT_FAILONERROR    => false,
+            CURLOPT_USERAGENT      => 'edge-cache-tags-ee-cp/' . $this->installedVersion(),
+        ]);
+        $body = @curl_exec($ch);
+        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        $out = null;
+        if ($status === 200 && is_string($body)) {
+            $j = json_decode($body, true);
+            if (is_array($j) && in_array($j['token_scope'] ?? '', ['purge', 'read', 'config'], true)) {
+                $out = ['scope' => $j['token_scope'], 'hostname' => (string) ($j['hostname'] ?? '')];
+            }
+        }
+        self::$scope_cache[$key] = $out;
+        return $out;
+    }
+
+    /** The token-scope line above the stats: purge is healthy, config is too much. */
+    private function renderTokenScopeBanner(array $scope): string
+    {
+        $h = fn($v) => htmlspecialchars((string) $v);
+        $host = $scope['hostname'] !== '' ? $scope['hostname'] : $this->currentSiteHost();
+        if ($scope['scope'] === 'purge') {
+            return '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:7px;padding:10px 14px;margin-bottom:14px;font-size:13px;line-height:1.55">'
+                . '<span style="color:#166534;font-weight:600">✓ Purge token ·</span> '
+                . '<span style="color:#15803d">This server can purge the cache of <strong>' . $h($host) . '</strong> and do nothing else on Nivoli. That is how it should be: statistics and settings live in the Nivoli console, behind your sign-in.</span>'
+                . '</div>';
+        }
+        return '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:7px;padding:10px 14px;margin-bottom:14px;font-size:13px;line-height:1.55">'
+            . '<span style="color:#92400e;font-weight:600">⚠ Full-access token ·</span> '
+            . '<span style="color:#78350f">The dashboard URL below carries the token that can change every setting of <strong>' . $h($host) . '</strong> on Nivoli. This add-on only needs to purge: create a purge token in the Nivoli console and paste <code>https://console.nivoli.com/cache/&lt;purge token&gt;</code> as the dashboard URL. The statistics here then move to the console.</span>'
+            . '</div>';
+    }
+
     private static $hostnames_cache = null;
     private static $hostnames_cache_key = null;
     private function fetchNivoliHostnames(string $endpoint): ?array

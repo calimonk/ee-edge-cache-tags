@@ -23,11 +23,19 @@ return array(
     'author_url'  => 'https://github.com/calimonk/ee-edge-cache-tags',
     'name'        => 'Edge Cache',
     'description' => 'Full-page HTML caching at the edge with surgical tag-based purge. Make every visitor hit Cloudflare, Fastly, Varnish, or Nivoli — not your origin. When an entry changes, only the pages featuring it refresh; never the whole cache.',
-    'version'     => '2.4.27',
+    'version'     => '2.5.0',
     'namespace'   => 'EdgeCacheTags',
     'settings_exist' => true,
 
     'hooks' => array(
+        // v2.5.0: the origin lock (OriginLock.php). First of all our hooks,
+        // and early in EE's request: before a member, a CP route or an ACT
+        // action is resolved.
+        array(
+            'hook'     => 'sessions_start',
+            'method'   => 'sessions_start',
+            'priority' => 1,
+        ),
         // Register the addon in the EE CP sidebar (CUSTOM section). EE
         // only invokes this hook for classes referenced by a row in
         // exp_menu_items; the installer adds that row in ensureMenuItem().
