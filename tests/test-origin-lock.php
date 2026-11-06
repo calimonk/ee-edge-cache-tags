@@ -8,6 +8,9 @@
  * what only PHP sees: the command line, trailing-dot and port spellings of
  * the host, MSM hosts without a secret, the phase 4 assertion hook.
  *
+ * The last block guards how the hook is registered (2.5.1, after the
+ * 2026-11-06 incident); the harness run that reproduced it is in the PR.
+ *
  * Mutation-checked 2026-11-06 (each fails, passes restored):
  *   - the cli/REQUEST_METHOD exemption removed
  *   - rtrim of the trailing dot removed from normalizeHost
@@ -104,6 +107,26 @@ check('the assertion is not consulted when the secret is missing', $calls, 0);
 $line = OriginLock::logLine(OriginLock::decide($req(['HTTP_X_NIVOLI_ORIGIN' => S2, 'REQUEST_URI' => "/x\n\ty"]), $cfg, 'fpm-fcgi'), $req(['HTTP_X_NIVOLI_ORIGIN' => S2, 'REQUEST_URI' => "/x\n\ty"]));
 check('the log line never carries the header value', strpos($line, S2), false);
 check('the log line has no control characters', (bool) preg_match('/[\x00-\x1f]/', $line), false);
+
+// ---- 2.5.1: how the hook gets registered (2026-11-06 incident) ----
+// 2.5.0 listed sessions_start in the manifest, so `eecli.php addons:update`
+// registered it while PHP-FPM's OPcache still served the 2.4.27 class: every
+// request on the game sites failed with "class Edge_cache_tags_ext does not
+// have a method sessions_start" until the rollback. These read the add-on's
+// own files, which is what EE reads.
+$base = __DIR__ . '/../system/user/addons/edge_cache_tags/';
+$manifest = include $base . 'addon.setup.php';
+$hooks = array_map(fn($h) => $h['hook'] ?? '', $manifest['hooks'] ?? []);
+check('the manifest does not list sessions_start (EE would register it on every update)', in_array('sessions_start', $hooks, true), false);
+check('the manifest still lists the four cache hooks', $hooks, ['cp_custom_menu', 'template_post_parse', 'after_channel_entry_save', 'after_channel_entry_delete']);
+$ext = file_get_contents($base . 'ext.edge_cache_tags.php');
+check('the extension has update_extension (eecli addons:update calls it unguarded)', (bool) preg_match('/public function update_extension\(/', $ext), true);
+$upd = file_get_contents($base . 'upd.edge_cache_tags.php');
+check('the installer never registers the hook from the command line', (bool) preg_match("/PHP_SAPI === 'cli'[^;]*\) return 'pending'/", $upd), true);
+check('...and only when the loaded class has the method', strpos($upd, "if (!method_exists('Edge_cache_tags_ext', 'sessions_start')) return 'stale';") !== false, true);
+check('...and removes it when the lock is not configured', (bool) preg_match("/if \(\\\$cfg\['mode'\] === 'off' \|\| !\\\$cfg\['secrets'\]\) \{\s*ee\(\)->db->where\(\\\$where\)->delete\('extensions'\);/", $upd), true);
+$versions = [$manifest['version'], (preg_match("/public \\\$version = '([^']+)'/", $ext, $m) ? $m[1] : ''), (preg_match("/'module_version'\s*=> '([^']+)'/", $upd, $m2) ? $m2[1] : '')];
+check('manifest, extension and installer agree on the version', count(array_unique($versions)), 1);
 
 echo "\n$pass passed, $fail failed\n";
 exit($fail ? 1 : 0);

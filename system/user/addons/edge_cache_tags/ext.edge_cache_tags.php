@@ -35,7 +35,7 @@ if (!defined('BASEPATH')) { exit('No direct script access allowed'); }
 
 class Edge_cache_tags_ext {
 
-    public $version = '2.5.0';
+    public $version = '2.5.1';
 
     const MAX_KEYS    = 50;
     const MAX_KEY_LEN = 64;
@@ -51,6 +51,19 @@ class Edge_cache_tags_ext {
 
     public function __construct() {
         // EE instantiates extensions without args.
+    }
+
+    /**
+     * EE calls this when the class's $version is newer than the version in
+     * exp_extensions: on any hook call (legacy Extensions::call, guarded by
+     * method_exists) and from `eecli.php addons:update`, which calls it
+     * without that guard. Until 2.5.1 there was none, so the CLI update
+     * stopped with "Call to undefined method update_extension()" after the
+     * module rows were already written. The real work is in the installer's
+     * update(); nothing to do here.
+     */
+    public function update_extension($current = '') {
+        return true;
     }
 
     // ---- Origin lock (v2.5.0, Nivoli Gate phase 6) -------------------------

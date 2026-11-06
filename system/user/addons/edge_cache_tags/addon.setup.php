@@ -23,19 +23,21 @@ return array(
     'author_url'  => 'https://github.com/calimonk/ee-edge-cache-tags',
     'name'        => 'Edge Cache',
     'description' => 'Full-page HTML caching at the edge with surgical tag-based purge. Make every visitor hit Cloudflare, Fastly, Varnish, or Nivoli — not your origin. When an entry changes, only the pages featuring it refresh; never the whole cache.',
-    'version'     => '2.5.0',
+    'version'     => '2.5.1',
     'namespace'   => 'EdgeCacheTags',
     'settings_exist' => true,
 
     'hooks' => array(
-        // v2.5.0: the origin lock (OriginLock.php). First of all our hooks,
-        // and early in EE's request: before a member, a CP route or an ACT
-        // action is resolved.
-        array(
-            'hook'     => 'sessions_start',
-            'method'   => 'sessions_start',
-            'priority' => 1,
-        ),
+        // NOT here: sessions_start (the origin lock). EE registers every hook
+        // listed here on install and update, and runs sessions_start on every
+        // request, front end and CP alike. Registered on update by the CLI
+        // while PHP-FPM still runs the previous ext.edge_cache_tags.php from
+        // OPcache (revalidate_freq=300 on the game sites), it made every
+        // request fail with "class Edge_cache_tags_ext does not have a method
+        // sessions_start" (2.5.0, 2026-11-06). upd.edge_cache_tags.php
+        // registers it itself, only when the lock is configured and only from
+        // a web request whose loaded class has the method
+        // (ensureOriginLockHook).
         // Register the addon in the EE CP sidebar (CUSTOM section). EE
         // only invokes this hook for classes referenced by a row in
         // exp_menu_items; the installer adds that row in ensureMenuItem().

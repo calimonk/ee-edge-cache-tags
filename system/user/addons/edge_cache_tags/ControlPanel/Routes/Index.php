@@ -83,7 +83,16 @@ class Index extends AbstractRoute
             // try to run real version-to-version migration logic — we
             // just want the backfills.
             $upd->update('');
-            return 'Reinstall complete — hooks, sidebar entry, modules row, and tables verified.';
+            // v2.5.1: what happened to the origin lock's hook, which is
+            // registered only from here (a web request), never by the CLI.
+            $lock = $upd->ensureOriginLockHook();
+            $lockMsg = [
+                'off' => '',
+                'registered' => ' Origin lock hook registered.',
+                'stale' => ' The origin lock was NOT switched on: PHP is still running the previous version of the add-on (OPcache). Reset OPcache or wait a few minutes, then click again.',
+                'pending' => '',
+            ][$lock] ?? '';
+            return 'Reinstall complete — hooks, sidebar entry, modules row, and tables verified.' . $lockMsg;
         } catch (\Throwable $e) {
             return 'Reinstall failed: ' . $e->getMessage();
         }
@@ -233,17 +242,19 @@ class Index extends AbstractRoute
         // paths leave exp_extensions empty), the front end emits no
         // headers and saves dispatch no purges. The CP fixHooks action
         // below lets the operator backfill without uninstall+reinstall.
+        // sessions_start (the origin lock) is not in the manifest since
+        // 2.5.1 and is counted by the origin lock check instead.
         $hookRows = (int) ee()->db->where([
             'class'   => 'Edge_cache_tags_ext',
             'enabled' => 'y',
-        ])->count_all_results('extensions');
+        ])->where('hook !=', 'sessions_start')->count_all_results('extensions');
         // v2.5.0: the expected set comes from the manifest (it gained
         // sessions_start for the origin lock), not a hard-coded 4.
         $manifest = include dirname(__DIR__, 2) . '/addon.setup.php';
         $wantHooks = array_map(fn($x) => (string) ($x['hook'] ?? ''), (array) ($manifest['hooks'] ?? []));
         $hookDetail = $hookRows . ' enabled row(s), expected ' . count($wantHooks) . ' (' . implode(', ', $wantHooks) . ')';
         if ($hookRows < count($wantHooks)) {
-            $hookDetail .= '. Headers may not emit, purges may not dispatch and the origin lock may not run. Click "Reinstall hooks" below, or run Update on the Add-Ons listing.';
+            $hookDetail .= '. Headers may not emit and purges may not dispatch. Click "Reinstall hooks" below, or run Update on the Add-Ons listing.';
         }
         $checks[] = [
             'label'  => 'Extension hooks',
@@ -341,6 +352,18 @@ class Index extends AbstractRoute
                 'ok'     => !$bad,
                 'detail' => 'off. Set edge_cache_tags_origin_secrets (and edge_cache_tags_origin_lock) in config.php to refuse requests that skip the Nivoli edge.'
                     . ($bad ? ' Ignored: ' . implode('; ', $bad) . '.' : ''),
+            ];
+        }
+        // Configured, but the hook is not registered (v2.5.1: only a web
+        // request registers it; see upd ensureOriginLockHook).
+        $hookRow = (int) ee()->db->where(['class' => 'Edge_cache_tags_ext', 'hook' => 'sessions_start', 'enabled' => 'y'])->count_all_results('extensions');
+        if ($hookRow === 0) {
+            return [
+                'label'  => 'Origin lock',
+                'ok'     => false,
+                'detail' => 'configured (' . $cfg['mode'] . ' for ' . implode(', ', $hosts) . ') but not switched on yet: its hook is registered from this page, so that it only ever runs once PHP serves this version of the add-on. Click "Reinstall hooks" below.'
+                    . ($bad ? ' Ignored: ' . implode('; ', $bad) . '.' : ''),
+                'action' => 'reinstall_hooks',
             ];
         }
         $here = isset($cfg['secrets'][$host]);
